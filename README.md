@@ -13,6 +13,15 @@ and — if you allow it — let them talk to each other.
 [![dependencies](https://img.shields.io/badge/dependencies-0-f59f00)](package.json)
 [![license](https://img.shields.io/badge/license-MIT-7950f2)](LICENSE)
 
+#### Install as easy as
+```
+  npm i -g @dirwin517/bot-farm
+```
+#### Running as easy as 
+```
+bot-farm
+```
+
 <img src="imgs/FARM.png" alt="The Farm view: bots walk from the farmhouse to the crops they're working on" width="100%">
 
 <sub>The <b>Farm</b> view — every card is a crop, every bot walks to the one it's working on.</sub>
