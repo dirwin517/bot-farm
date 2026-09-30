@@ -1,0 +1,13 @@
+{
+  "name": "bot-farm",
+  "version": "0.1.0",
+  "description": "kanban style process manager and dashboard for opencode agent sessions",
+  "type": "module",
+  "bin": { "bot-farm": "src/cli.mjs" },
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node src/cli.mjs up"
+  },
+  "dependencies": {},
+  "license": "MIT"
+}

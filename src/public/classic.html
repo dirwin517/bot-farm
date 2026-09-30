@@ -1,0 +1,1810 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>botfarm</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    /* Status is carried by amber / violet / blue, never red-versus-green:
+       the one pair a red-green colour blind operator cannot separate. Red is
+       used only for failure, where it never has to be told apart from success,
+       and every state is also labelled in words. */
+    --ink: #0a111c; --panel: #172232; --panel-2: #1f2c3f; --line: #37495f;
+    --text: #f0f4fa; --dim: #a3b2c9; --faint: #6c7f9c;
+    --busy: #ffab2e; --wait: #b494ff; --error: #ff6f61; --idle: #7d92b0; --ok: #4cc3ff;
+    --radius: 5px;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--ink); color: var(--text); font-family: var(--sans); font-size: 14px; line-height: 1.45; -webkit-font-smoothing: antialiased; }
+  body.modal-open { overflow: hidden; }
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  button, input, textarea, select { font: inherit; color: inherit; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 5px 9px; }
+  button { cursor: pointer; transition: background .12s, border-color .12s; }
+  button:hover { background: #22304a; }
+  button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--wait); outline-offset: 1px; }
+  input::placeholder, textarea::placeholder { color: var(--faint); }
+  .ghost { background: transparent; color: var(--dim); }
+  .ghost:hover { color: var(--text); }
+  .danger:hover { background: #3a1f20; border-color: #6b2f2c; color: #ffb3ab; }
+  .primary { background: #24405f; border-color: #33587f; }
+  .primary:hover { background: #2c4e74; }
+  .tiny { font-size: 11px; padding: 2px 7px; }
+
+  header { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 24px; flex-wrap: wrap; padding: 12px 20px; background: var(--ink); border-bottom: 1px solid var(--line); }
+  .brand { display: flex; align-items: baseline; gap: 10px; }
+  .brand b { font-weight: 600; font-size: 16px; letter-spacing: -.01em; }
+  .brand span { color: var(--faint); font-size: 12px; font-family: var(--mono); }
+  .readout { display: flex; gap: 20px; align-items: flex-end; }
+  .stat { display: flex; flex-direction: column; }
+  .stat b { font-family: var(--mono); font-weight: 500; font-size: 17px; letter-spacing: -.02em; }
+  .stat i { font-style: normal; font-size: 11px; color: var(--dim); }
+  .stat.est b { color: var(--ok); }
+  .header-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+
+  .shell { display: grid; grid-template-columns: 228px 1fr; align-items: start; }
+  nav { position: sticky; top: 53px; padding: 16px 12px 40px; border-right: 1px solid var(--line); height: calc(100vh - 53px); overflow-y: auto; }
+  nav h4 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); margin: 18px 6px 6px; }
+  nav h4:first-child { margin-top: 0; }
+  .navitem { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: transparent; border-radius: var(--radius); padding: 6px 8px; text-align: left; color: var(--dim); }
+  .navitem:hover { background: var(--panel); color: var(--text); }
+  .navitem[aria-current="true"] { background: var(--panel-2); color: var(--text); }
+  .navitem .c { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--faint); }
+  .navitem .c b { color: var(--wait); font-weight: 500; }
+  .navitem.room .n { font-family: var(--mono); font-size: 12.5px; }
+  .dotm { width: 6px; height: 6px; border-radius: 50%; background: var(--wait); display: inline-block; margin-right: 6px; }
+  .muted .dotm { background: var(--faint); }
+  .navadd { color: var(--faint); font-size: 12px; }
+
+  main { padding: 16px 20px 60px; min-width: 0; }
+  .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+  .toolbar input { width: 250px; }
+  .banner { display: flex; gap: 10px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--busy); border-radius: var(--radius); padding: 9px 12px; margin-bottom: 14px; font-size: 13px; color: var(--dim); }
+  .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); }
+
+  .pod { display: grid; grid-template-columns: 4px 1fr; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .rail { background: var(--idle); }
+  .pod[data-status="busy"] .rail { background: var(--busy); }
+  .pod[data-status="waiting"] .rail { background: var(--wait); }
+  .pod[data-status="error"] .rail { background: var(--error); }
+  .body { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .row1 { display: flex; align-items: center; gap: 9px; min-width: 0; }
+  .avatar { width: 54px; height: 54px; border-radius: 10px; flex: none; cursor: pointer; }
+  .who { display: flex; flex-direction: column; min-width: 0; }
+  .handle { font-family: var(--mono); font-size: 15px; font-weight: 500; cursor: pointer; }
+  .handle:hover { text-decoration: underline; }
+  .name { font-size: 12.5px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .state { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--dim); white-space: nowrap; }
+  .pod[data-status="busy"] .state { color: var(--busy); }
+  .pod[data-status="waiting"] .state { color: var(--wait); }
+  .pod[data-status="error"] .state { color: var(--error); }
+  .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: currentColor; margin-right: 6px; vertical-align: 1px; }
+  .pod[data-status="busy"] .dot { animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .25 } }
+  @media (prefers-reduced-motion: reduce) { .dot { animation: none !important } }
+  .meta { display: flex; gap: 8px; font-family: var(--mono); font-size: 11px; color: var(--dim); min-width: 0; flex-wrap: wrap; }
+  .meta .path { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tag { border: 1px solid var(--line); border-radius: 3px; padding: 0 5px; white-space: nowrap; }
+  .tag.diff { color: var(--ok); border-color: #1d4a63; }
+  .tag.mail { color: var(--wait); border-color: #3b3159; background: #221b3a; }
+  .tag.grp { color: var(--faint); }
+  .charts { display: flex; gap: 14px; }
+  .chart { flex: 1; min-width: 0; }
+  .chart .cap { display: flex; justify-content: space-between; align-items: baseline; font-size: 11px; color: var(--dim); }
+  .chart .cap b { font-family: var(--mono); font-weight: 500; font-size: 13px; color: var(--text); }
+  svg.spark { display: block; width: 100%; height: 28px; }
+  .say { font-size: 12.5px; color: var(--dim); background: var(--ink); border: 1px solid var(--line); border-radius: var(--radius); padding: 7px 9px; min-height: 54px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .say.tool { color: var(--busy); font-family: var(--mono); font-size: 12px; }
+  .actions { display: flex; gap: 6px; }
+  .actions input { flex: 1; min-width: 0; font-size: 12.5px; }
+  .perm { background: #2a2145; border: 1px solid #453a72; border-radius: var(--radius); padding: 6px 9px; font-size: 12px; display: flex; gap: 8px; align-items: center; }
+  .perm b { color: var(--wait); font-weight: 500; }
+
+  .scrim { position: fixed; inset: 0; background: rgba(6,9,15,.72); z-index: 30; }
+  .modal { position: fixed; inset: 4vh 3vw; z-index: 31; display: grid; grid-template-columns: 1fr 340px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; box-shadow: 0 24px 70px rgba(0,0,0,.5); animation: pop .16s ease-out; }
+  @keyframes pop { from { transform: scale(.985); opacity: .5 } }
+  @media (prefers-reduced-motion: reduce) { .modal { animation: none } }
+  .modal .left { display: flex; flex-direction: column; min-width: 0; }
+  .modal .top { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  .modal .top .h { font-family: var(--mono); font-size: 15px; font-weight: 500; }
+  .modal .top .s { color: var(--dim); font-size: 12px; }
+  .modal .top .right { margin-left: auto; display: flex; gap: 6px; }
+  .transcript { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .turn { display: flex; gap: 10px; }
+  .turn img, .turn .avdot { width: 40px; height: 40px; border-radius: 8px; flex: none; }
+  .turn .avdot { background: #14344a; border: 1px solid #245c7d; }
+  .turn .c { min-width: 0; flex: 1; }
+  .turn .m { font-family: var(--mono); font-size: 11px; color: var(--dim); margin-bottom: 2px; }
+  .turn.user .m, .turn.op .m { color: var(--ok); }
+  .turn .b { font-size: 13.5px; white-space: pre-wrap; word-break: break-word; }
+  .turn .tools { margin-top: 5px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .turn .tools span { font-family: var(--mono); font-size: 11px; color: var(--busy); border: 1px solid #45391f; border-radius: 3px; padding: 0 5px; }
+  .turn .b.long { max-height: 9.5em; overflow: hidden; -webkit-mask-image: linear-gradient(#000 70%, transparent); mask-image: linear-gradient(#000 70%, transparent); }
+  .turn details.more > summary, .turn details.think > summary { cursor: pointer; font-family: var(--mono); font-size: 11px; color: var(--faint); list-style: none; margin-top: 3px; }
+  .turn details.more > summary .lbl { display: block; margin-top: 2px; }
+  .turn details.more > summary .less, .turn details.more[open] > summary .b, .turn details.more[open] > summary .lbl:not(.less) { display: none; }
+  .turn details.more[open] > summary .less { display: block; }
+  .turn details.think { margin: 4px 0; }
+  .turn details.think > div { font-size: 12.5px; color: var(--dim); font-style: italic; white-space: pre-wrap; border-left: 2px solid var(--line); padding-left: 8px; margin-top: 3px; }
+  .turn .call { display: flex; gap: 8px; align-items: baseline; font-family: var(--mono); font-size: 11.5px; margin: 3px 0; padding: 3px 7px; border: 1px solid var(--line); border-radius: 4px; background: var(--ink); min-width: 0; }
+  .turn .call .nm { color: var(--busy); flex: none; }
+  .turn .call .sm { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+  .turn .call .st { color: var(--faint); flex: none; }
+  .turn .call.s-running .st, .turn .call.s-pending .st { color: var(--busy); }
+  .turn .call.s-error { border-color: var(--error); }
+  .turn .call.s-error .st { color: var(--error); }
+  .turn .out { font-family: var(--mono); font-size: 11px; color: var(--dim); white-space: pre-wrap; max-height: 12em; overflow: auto; margin: 0 0 4px 8px; }
+  .working { font-family: var(--mono); font-size: 12px; color: var(--busy); padding: 2px 0 2px 50px; }
+  .working i { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--busy); margin-right: 6px; animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .25 } }
+  @media (prefers-reduced-motion: reduce) { .working i { animation: none } }
+  .crew .who .doing { display: block; max-width: 220px; font-size: 11px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); }
+  .composer { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); }
+  .composer textarea { flex: 1; resize: none; min-height: 40px; max-height: 140px; font-size: 13px; }
+  .side { border-left: 1px solid var(--line); overflow-y: auto; padding: 0 16px 28px; background: var(--ink); }
+  .sec { margin-top: 18px; }
+  .sec h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; font-weight: 600; color: var(--faint); margin: 0 0 8px; }
+  table.kv { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12px; }
+  table.kv td { padding: 3px 0; border-bottom: 1px dotted var(--line); }
+  table.kv td:last-child { text-align: right; }
+  .row { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px dotted var(--line); font-size: 12px; }
+  .row .g { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); }
+  .row .st { font-size: 10.5px; color: var(--faint); }
+  .sw { width: 34px; height: 19px; border-radius: 10px; background: #2a3550; border: 1px solid var(--line); position: relative; padding: 0; flex: none; }
+  .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: var(--faint); transition: left .12s, background .12s; }
+  .sw[aria-checked="true"] { background: #24405f; border-color: #33587f; }
+  .sw[aria-checked="true"]::after { left: 17px; background: var(--ok); }
+  .sw::before { content: "off"; position: absolute; right: -24px; top: 1px; font-size: 10px; color: var(--faint); }
+  .sw[aria-checked="true"]::before { content: "on"; color: var(--ok); }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; background: transparent; padding: 4px 9px; font-size: 11.5px; color: var(--dim); }
+  .seg button[aria-pressed="true"] { background: #24405f; color: var(--text); }
+  .note { font-size: 11.5px; color: var(--faint); margin-top: 6px; }
+  .wire { font-family: var(--mono); font-size: 10.5px; color: var(--faint); word-break: break-all; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 5px 7px; margin-top: 6px; }
+  .project { display: grid; grid-template-columns: 1fr 340px; gap: 12px; align-items: start; }
+  .project > .work { min-width: 0; }
+  .chatpane { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); display: flex; flex-direction: column; height: calc(100vh - 150px); position: sticky; top: 66px; }
+  .chatpane .ph { padding: 9px 12px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 8px; }
+  .chatpane .ph b { font-family: var(--mono); font-size: 13px; font-weight: 500; }
+  .chatpane .log { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .crew { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+  .crew .who { display: flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 28px; padding: 4px 14px 4px 5px; font-family: var(--mono); font-size: 12.5px; cursor: pointer; }
+  .crew .who img { width: 40px; height: 40px; border-radius: 50%; }
+  .crew .who[data-status="busy"] { border-color: var(--busy); color: var(--busy); }
+  .crew .who[data-status="waiting"] { border-color: var(--wait); color: var(--wait); }
+  .crew .who[data-status="error"] { border-color: var(--error); color: var(--error); }
+  .phead { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+  .phead h2 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
+  .phead .sub { font-family: var(--mono); font-size: 12px; color: var(--dim); }
+  .phead .right { margin-left: auto; display: flex; gap: 6px; }
+  .modal .left.split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); overflow: hidden; }
+  .modal .left.split > * { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+  .modal .left.split .taskside { overflow-y: auto; border-right: 1px solid var(--line); display: block; padding-bottom: 20px; }
+  .modal .left.split .taskside .sec { padding: 0 16px; }
+  .ask { background: #2b2350; border: 1px solid #4a3d84; border-left: 3px solid var(--wait); border-radius: var(--radius); padding: 11px 13px; margin-bottom: 10px; }
+  .ask .q { font-size: 13.5px; margin-bottom: 4px; }
+  .ask .asker { font-family: var(--mono); font-size: 11px; color: var(--wait); margin-bottom: 6px; display: flex; align-items: center; gap: 7px; }
+  .ask .asker img { width: 26px; height: 26px; border-radius: 6px; }
+  .ask .opts { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+  .ask .reply { display: flex; gap: 6px; }
+  .ask .reply input { flex: 1; }
+  .col.waiting h5 { color: var(--wait); }
+  .card.question { border-left: 3px solid var(--wait); }
+  .editor { display: grid; gap: 10px; }
+  .stagebox { background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; }
+  .stagebox .hd { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .stagebox .hd select { max-width: 180px; }
+  .stagebox .hd input.sid { width: 130px; font-family: var(--mono); }
+  .stagebox .hd .sp { margin-left: auto; display: flex; gap: 4px; }
+  .stagebox label { display: block; font-size: 11px; color: var(--faint); margin: 8px 0 3px; }
+  .stagebox textarea { width: 100%; min-height: 80px; font-family: var(--mono); font-size: 12px; resize: vertical; }
+  .stagebox .recv { display: flex; gap: 8px; flex-wrap: wrap; font-size: 11.5px; color: var(--dim); }
+  .stagebox .recv label { display: inline-flex; align-items: center; gap: 4px; margin: 0; color: var(--dim); font-size: 11.5px; }
+  .kanban { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(230px, 1fr); gap: 10px; align-items: start; overflow-x: auto; padding-bottom: 8px; }
+  .col { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); min-height: 90px; }
+  .col h5 { margin: 0; padding: 8px 10px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); border-bottom: 1px solid var(--line); display: flex; }
+  .col h5 span { margin-left: auto; font-family: var(--mono); }
+  .col.active h5 { color: var(--busy); }
+  .col.review h5 { color: var(--wait); }
+  .col.done h5 { color: var(--ok); }
+  .col.cancelled h5 { color: var(--error); }
+  .card { padding: 8px 10px; border-bottom: 1px dotted var(--line); cursor: pointer; }
+  .card:hover { background: var(--panel-2); }
+  .card .t { font-size: 12.5px; }
+  .card .s { display: flex; gap: 7px; align-items: center; margin-top: 6px; font-family: var(--mono); font-size: 11px; color: var(--faint); }
+  .card .s img { width: 24px; height: 24px; border-radius: 5px; }
+  .card .s .stage { color: var(--wait); }
+  .runs { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .run { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--ok); border-radius: var(--radius); padding: 8px 11px; min-width: 240px; }
+  .run .rt { font-size: 12.5px; }
+  .run .flow { display: flex; gap: 4px; align-items: center; margin-top: 6px; font-family: var(--mono); font-size: 10.5px; }
+  .run .step { padding: 1px 6px; border-radius: 3px; border: 1px solid var(--line); color: var(--faint); }
+  .run .step.done { color: var(--ok); border-color: #1d4a63; }
+  .run .step.active { color: var(--busy); border-color: #45391f; }
+  .run .step.review { color: var(--wait); border-color: #3b3159; }
+  .run .arrow { color: var(--faint); }
+  .diff { font-family: var(--mono); font-size: 11.5px; white-space: pre; overflow-x: auto; background: var(--ink); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px; max-height: 50vh; overflow-y: auto; }
+  /* +/- prefixes do the work; colour only reinforces it. */
+  .diff .add { color: var(--ok); background: rgba(76,195,255,.07); }
+  .diff .del { color: var(--busy); background: rgba(255,171,46,.07); }
+  .diff .hunk { color: var(--wait); }
+  .empty { color: var(--dim); padding: 50px 0; text-align: center; }
+  .empty b { display: block; color: var(--text); font-size: 16px; margin-bottom: 6px; font-weight: 600; }
+  dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 20px; width: min(560px, 94vw); }
+  dialog::backdrop { background: rgba(6,9,15,.65); }
+  dialog label { display: block; font-size: 12px; color: var(--dim); margin: 12px 0 4px; }
+  dialog input, dialog textarea, dialog select { width: 100%; }
+  .pick { max-height: 290px; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--radius); margin-top: 6px; }
+  .pick label { display: flex; gap: 9px; align-items: center; margin: 0; padding: 6px 9px; color: var(--text); border-bottom: 1px dotted var(--line); font-size: 12.5px; }
+  .pick label:hover { background: var(--panel-2); }
+  .pick input { width: auto; }
+  .pick .d { color: var(--faint); font-family: var(--mono); font-size: 11px; margin-left: auto; white-space: nowrap; }
+  .feed { font-family: var(--mono); font-size: 11.5px; color: var(--faint); max-height: 150px; overflow-y: auto; }
+  .feed .warn { color: var(--busy); }
+  .feed .error { color: var(--error); }
+  @media (max-width: 1200px) {
+    .project { grid-template-columns: 1fr; }
+    .chatpane { height: 420px; position: static; }
+    .split { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 900px) {
+    .shell { grid-template-columns: 1fr; }
+    nav { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+    .modal { inset: 0; border-radius: 0; grid-template-columns: 1fr; }
+    .side { display: none; }
+    .grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><b>botfarm</b><span id="conn">connecting…</span></div>
+  <div class="readout">
+    <div class="stat"><b class="num" id="s-busy">0</b><i>running</i></div>
+    <div class="stat"><b class="num" id="s-sessions">0</b><i>on the board</i></div>
+    <div class="stat"><b class="num" id="s-tpm">0</b><i>tokens/min</i></div>
+    <div class="stat"><b class="num" id="s-tools">0</b><i>tool calls</i></div>
+    <div class="stat est"><b class="num" id="s-cost">$0.00</b><i id="s-cost-l">est. spend</i></div>
+  </div>
+  <div class="header-right">
+    <svg class="spark" id="global-spark" style="width:170px"></svg>
+    <button class="ghost" id="add-existing">Add existing…</button>
+    <button class="primary" id="new-pod">New session</button>
+  </div>
+</header>
+
+<div class="shell">
+  <nav>
+    <h4>Sessions</h4>
+    <div id="nav-views"></div>
+    <div id="nav-work"></div>
+    <h4>Projects</h4>
+    <div id="nav-projects"></div>
+    <button class="navitem navadd" id="add-project">+ New project</button>
+  </nav>
+
+  <main>
+    <div class="banner" id="loose" hidden></div>
+    <div class="toolbar">
+      <input id="filter" placeholder="Filter by handle, branch or path   /" />
+      <span class="num" style="color:var(--faint);font-size:12px" id="scope"></span>
+      <button class="ghost" id="new-task">New task</button>
+      <button class="ghost danger" id="abort-all" style="margin-left:auto">Abort all</button>
+      <span style="color:var(--faint);font-size:12px" id="updated"></span>
+    </div>
+    <div id="project-view" hidden></div>
+    <div class="runs" id="runs"></div>
+    <div class="kanban" id="kanban" hidden></div>
+    <div class="grid" id="grid"></div>
+    <div class="empty" id="empty" hidden>
+      <b>Nothing on the board</b>
+      Start one with “New session”, or use “Add existing…” to put a session opencode already knows about here.
+    </div>
+    <div class="sec"><h3>Activity</h3><div class="feed" id="feed"></div></div>
+  </main>
+</div>
+
+<dialog id="adopt-dialog">
+  <b>Add existing sessions</b>
+  <div class="note">opencode keeps every session you have ever opened. Pick the ones you are actually running; the rest stay out of the way.</div>
+  <label for="a-search">Search</label>
+  <input id="a-search" placeholder="title or path" />
+  <div class="pick" id="a-list"></div>
+  <label for="a-group">Group</label>
+  <select id="a-group"></select>
+  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+    <button class="ghost" id="a-cancel">Cancel</button>
+    <button class="primary" id="a-add">Add selected</button>
+  </div>
+</dialog>
+
+<dialog id="new-dialog">
+  <b>New session</b>
+  <label for="f-repo">Repository path</label>
+  <input id="f-repo" placeholder="~/code/app" />
+  <div class="note" id="f-repo-info"></div>
+  <div class="pick" id="f-services" hidden></div>
+  <label for="f-branch">Branch — creates a git worktree; leave empty to work in the repo itself</label>
+  <input id="f-branch" placeholder="fix/auth-redirect" />
+  <label for="f-task">First instruction (optional)</label>
+  <textarea id="f-task" rows="3"></textarea>
+  <label for="f-group">Group</label>
+  <select id="f-group"></select>
+  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+    <button class="ghost" id="f-cancel">Cancel</button>
+    <button class="primary" id="f-create">Create</button>
+  </div>
+  <div id="f-error" style="color:var(--error);font-size:12px;margin-top:10px"></div>
+</dialog>
+
+<dialog id="task-dialog">
+  <b>New task</b>
+  <div class="note">The same thing a bot does with botfarm_task_create — assigned work is offered to a session when it next goes idle.</div>
+  <label for="t-title">Title</label>
+  <input id="t-title" placeholder="Fix the double-redirect on refresh" />
+  <label for="t-brief">Brief — the assignee cannot see your other conversations</label>
+  <textarea id="t-brief" rows="4"></textarea>
+  <label for="t-project">Project</label>
+  <select id="t-project"></select>
+  <label for="t-assignee">Assign to</label>
+  <select id="t-assignee"></select>
+  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+    <button class="ghost" id="t-cancel">Cancel</button>
+    <button class="primary" id="t-create">Add to board</button>
+  </div>
+  <div id="t-error" style="color:var(--error);font-size:12px;margin-top:10px"></div>
+</dialog>
+
+<dialog id="project-dialog">
+  <b>New project</b>
+  <div class="note">A project owns a checkout, the sessions working in it, its board and its chat.</div>
+  <label for="pj-name">Name</label>
+  <input id="pj-name" placeholder="SSO return path" />
+  <label for="pj-repo">Repository path (optional)</label>
+  <input id="pj-repo" placeholder="~/workspace/app" />
+  <label>Sessions to move into it</label>
+  <div class="pick" id="pj-sessions"></div>
+  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+    <button class="ghost" id="pj-cancel">Cancel</button>
+    <button class="primary" id="pj-create">Create</button>
+  </div>
+  <div id="pj-error" style="color:var(--error);font-size:12px;margin-top:10px"></div>
+</dialog>
+
+<dialog id="edit-dialog" style="width:min(860px,96vw)">
+  <div style="display:flex;align-items:baseline;gap:10px">
+    <b id="ed-title">Edit pipeline</b>
+    <span class="note" style="margin:0" id="ed-file"></span>
+    <span style="margin-left:auto;display:flex;gap:6px">
+      <button class="ghost tiny" id="ed-yaml-toggle">Edit as YAML</button>
+      <button class="ghost tiny" id="ed-cancel">Close</button>
+      <button class="primary tiny" id="ed-save">Save</button>
+    </span>
+  </div>
+  <div id="ed-body" class="editor" style="max-height:70vh;overflow-y:auto;margin-top:12px"></div>
+  <textarea id="ed-yaml" hidden style="width:100%;height:60vh;font-family:var(--mono);font-size:12px;margin-top:12px"></textarea>
+  <div id="ed-error" style="color:var(--error);font-size:12px;margin-top:10px;white-space:pre-wrap"></div>
+</dialog>
+
+<dialog id="pipe-dialog">
+  <b>Run a pipeline</b>
+  <div class="note">Every persona in the pipeline gets its own session, all sharing one worktree, plus a group chat.</div>
+  <label for="p-pipeline">Pipeline</label>
+  <select id="p-pipeline"></select>
+  <div class="note" id="p-stages"></div>
+  <div style="display:flex;gap:6px;margin-top:6px">
+    <button class="ghost tiny" id="p-edit">Edit this pipeline</button>
+    <button class="ghost tiny" id="p-personas">Edit personas</button>
+  </div>
+  <label for="p-repo">Repository path</label>
+  <input id="p-repo" placeholder="~/code/app" />
+  <div class="note" id="p-repo-info"></div>
+  <div class="pick" id="p-services" hidden></div>
+  <label for="p-branch">Branch for the worktree</label>
+  <input id="p-branch" placeholder="feat/sso-return-path" />
+  <label for="p-story">Story</label>
+  <textarea id="p-story" rows="4" placeholder="Users bounce to the dashboard root after SSO instead of their last page."></textarea>
+  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+    <button class="ghost" id="p-reload">Reload YAML</button>
+    <button class="ghost" id="p-cancel">Cancel</button>
+    <button class="primary" id="p-run">Start</button>
+  </div>
+  <div id="p-error" style="color:var(--error);font-size:12px;margin-top:10px"></div>
+</dialog>
+
+<script>
+const $ = (s, r = document) => r.querySelector(s)
+const $$ = (s, r = document) => [...r.querySelectorAll(s)]
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]))
+
+const fmt = {
+  n(v) {
+    if (!v) return "0"
+    if (v >= 1e9) return (v / 1e9).toFixed(1) + "B"
+    if (v >= 1e6) return (v / 1e6).toFixed(1) + "M"
+    if (v >= 1e3) return (v / 1e3).toFixed(v >= 1e4 ? 0 : 1) + "k"
+    return String(Math.round(v))
+  },
+  money(v) { return "$" + (v ?? 0).toFixed(v && v < 1 ? 3 : 2) },
+  ago(ts) {
+    if (!ts) return "—"
+    const s = Math.max(0, Math.round((Date.now() - ts) / 1000))
+    if (s < 60) return s + "s"
+    if (s < 3600) return Math.floor(s / 60) + "m" + String(s % 60).padStart(2, "0") + "s"
+    if (s < 86400) return Math.floor(s / 3600) + "h" + String(Math.floor((s % 3600) / 60)).padStart(2, "0") + "m"
+    return Math.floor(s / 86400) + "d"
+  },
+  ms(v) { return v == null ? "" : v < 1000 ? v + "ms" : (v / 1000).toFixed(1) + "s" },
+  path(p, keep = 3) {
+    const short = (p ?? "").replace(/^\/(Users|home)\/[^/]+/, "~")
+    const seg = short.split("/")
+    return seg.length > keep + 1 ? "…/" + seg.slice(-keep).join("/") : short
+  },
+}
+const COLOR = { busy: "#f0a437", waiting: "#a888f4", error: "#e2564a", idle: "#55698c" }
+const avatarUrl = (s) => `/avatar/${encodeURIComponent(s.id)}.svg?h=${encodeURIComponent(s.handle ?? "")}`
+
+function spark(svg, values, color, { w = 240, h = 28 } = {}) {
+  const n = values.length
+  const peak = Math.max(...values)
+  svg.setAttribute("viewBox", `0 0 ${w} ${h}`)
+  svg.setAttribute("preserveAspectRatio", "none")
+  if (!peak) { svg.innerHTML = ""; return }
+  const dx = w / (n - 1)
+  const y = (v) => h - 1.5 - (v / peak) * (h - 4)
+  let d = ""
+  values.forEach((v, i) => { d += (i ? "L" : "M") + (i * dx).toFixed(1) + "," + y(v).toFixed(1) })
+  const id = "g" + Math.abs([...color].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) | 0, 7))
+  svg.innerHTML =
+    `<defs><linearGradient id="${id}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity=".38"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs>` +
+    `<path d="${d}L${w},${h}L0,${h}Z" fill="url(#${id})"/>` +
+    `<path d="${d}" fill="none" stroke="${color}" stroke-width="1.4" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`
+}
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    method: opts.method ?? "GET",
+    headers: opts.body ? { "content-type": "application/json" } : undefined,
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  })
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText)
+  return res.status === 204 ? null : res.json()
+}
+
+let state = { at: Date.now(), sessions: [], rooms: [], groups: [], totals: {}, events: [] }
+let view = { kind: "all", value: null }
+let filterText = ""
+let openId = null
+// Live transcript for the open session, fed by websocket frames.
+let live = { id: null, msgs: null, status: null, currentTool: null, at: 0 }
+const openThoughts = new Set()
+let liveFrame = 0
+let sock = null
+const wsSend = (text) => { if (sock?.readyState === 1) sock.send(text) }
+let roomId = null
+let modalSig = null
+let roomSig = null
+let navSig = null
+
+// ------------------------------------------------------------------ cards
+const pods = new Map()
+
+function podEl(s) {
+  const el = document.createElement("div")
+  el.className = "pod"
+  el.innerHTML = `
+    <div class="rail"></div>
+    <div class="body">
+      <div class="row1">
+        <img class="avatar" alt="" />
+        <span class="who"><span class="handle"></span><span class="name"></span></span>
+        <span class="state"><i class="dot"></i><em class="stxt"></em></span>
+      </div>
+      <div class="meta"><span class="path"></span><span class="tag branch"></span><span class="tag diff"></span>
+        <span class="tag ctx"></span><span class="tag cost"></span><span class="tag mail"></span><span class="tag grp"></span></div>
+      <div class="charts">
+        <div class="chart"><div class="cap"><span>tokens/min</span><b class="tpm">0</b></div><svg class="spark s-tok"></svg></div>
+        <div class="chart"><div class="cap"><span>tools/min</span><b class="tlm">0</b></div><svg class="spark s-tool"></svg></div>
+      </div>
+      <div class="say"></div>
+      <div class="perm" hidden><b>Waiting for permission</b>
+        <button class="allow" style="margin-left:auto">Allow once</button><button class="always">Always</button><button class="deny danger">Deny</button></div>
+      <div class="actions">
+        <input class="msg-in" placeholder="Continue…  (⏎ to send)" />
+        <button class="send">Send</button>
+        <button class="abort danger">Abort</button>
+        <button class="open ghost">Open</button>
+      </div>
+    </div>`
+  const r = {
+    el, avatar: $(".avatar", el), handle: $(".handle", el), name: $(".name", el), stxt: $(".stxt", el),
+    path: $(".path", el), branch: $(".branch", el), diff: $(".diff", el), ctx: $(".ctx", el),
+    cost: $(".cost", el), mail: $(".mail", el), grp: $(".grp", el),
+    tpm: $(".tpm", el), tlm: $(".tlm", el), sTok: $(".s-tok", el), sTool: $(".s-tool", el),
+    say: $(".say", el), perm: $(".perm", el), input: $(".msg-in", el),
+  }
+  const send = async () => {
+    const text = r.input.value.trim()
+    if (!text) return
+    r.input.value = ""
+    try { await api(`/api/sessions/${s.id}/send`, { method: "POST", body: { text } }) }
+    catch (e) { r.input.value = text; alert(e.message) }
+  }
+  $(".send", el).onclick = send
+  r.input.onkeydown = (e) => { if (e.key === "Enter") send() }
+  $(".abort", el).onclick = () => api(`/api/sessions/${s.id}/abort`, { method: "POST" }).catch((e) => alert(e.message))
+  $(".open", el).onclick = () => openSession(s.id)
+  r.handle.onclick = () => openSession(s.id)
+  r.avatar.onclick = () => openSession(s.id)
+  for (const [cls, d] of [[".allow", "once"], [".always", "always"], [".deny", "reject"]]) {
+    $(cls, el).onclick = () => replyPermission(s.id, d)
+  }
+  return r
+}
+
+function updatePod(r, s) {
+  r.el.dataset.status = s.status
+  r.avatar.src = avatarUrl(s)
+  r.handle.textContent = s.handle ?? "…"
+  r.name.textContent = s.name
+  r.name.title = s.id
+  r.stxt.textContent =
+    s.status === "busy" ? "running " + fmt.ago(s.busySince ?? s.updated)
+    : s.status === "waiting" ? "needs input"
+    : s.status === "error" ? (s.lastError ?? "error")
+    : "idle " + fmt.ago(s.updated)
+  r.path.textContent = fmt.path(s.directory) || "—"
+  r.path.title = s.directory ?? ""
+  r.branch.hidden = !s.branch
+  r.branch.textContent = s.branch ?? ""
+  const g = s.git
+  r.diff.hidden = !g || (!g.insertions && !g.deletions && !g.dirty)
+  if (!r.diff.hidden) r.diff.textContent = `+${g.insertions} −${g.deletions} · ${g.dirty} files`
+  r.ctx.hidden = !s.contextTokens
+  r.ctx.textContent = fmt.n(s.contextTokens) + " ctx"
+  r.cost.hidden = !s.cost?.usd
+  if (s.cost?.usd) {
+    r.cost.textContent = (s.cost.estimated ? "~" : "") + fmt.money(s.cost.usd)
+    r.cost.title = s.cost.estimated ? "estimated from token counts" : "reported by the provider"
+  }
+  r.mail.hidden = !s.unread
+  if (s.unread) r.mail.textContent = `${s.unread} from @${s.lastPeer ?? "?"}`
+  r.grp.hidden = !s.project || s.project === "default"
+  r.grp.textContent = s.project ?? ""
+  r.tpm.textContent = fmt.n(s.tokPerMin)
+  r.tlm.textContent = s.toolPerMin ?? 0
+  spark(r.sTok, s.spark.tok, COLOR[s.status] ?? COLOR.idle)
+  spark(r.sTool, s.spark.tool, s.status === "busy" ? "#6fa8dc" : COLOR.idle)
+  if (s.currentTool) {
+    r.say.className = "say tool"
+    r.say.textContent = `${s.currentTool.name} · ${fmt.ago(s.currentTool.since)}`
+  } else {
+    r.say.className = "say"
+    r.say.textContent = s.lastText || "No messages yet."
+  }
+  r.perm.hidden = !s.pendingPermissions
+}
+
+async function replyPermission(id, decision) {
+  const d = await api(`/api/sessions/${id}`)
+  const req = d.permissions?.[0]
+  if (!req) return
+  await api(`/api/sessions/${id}/permission`, { method: "POST", body: { requestId: req.id, decision } })
+}
+
+// ------------------------------------------------------------------ render
+function visibleSessions() {
+  return state.sessions.filter((s) => {
+    if (view.kind === "running" && s.status === "idle") return false
+    if (view.kind === "project" && (s.project ?? "default") !== view.value) return false
+    if (view.kind === "room") {
+      const room = state.rooms.find((r) => r.id === view.value)
+      if (!room || !room.members.some((m) => m.id === s.id)) return false
+    }
+    if (!filterText) return true
+    return [s.handle, s.name, s.directory, s.branch, s.model, s.project].join(" ").toLowerCase().includes(filterText)
+  })
+}
+
+function renderNav() {
+  const rooms = state.rooms ?? []
+  const projects = state.projects ?? []
+  const sig = JSON.stringify([view, projects, state.totals.busy, state.sessions.length, (state.tasks ?? []).map((t) => t.status)])
+  if (sig === navSig) return
+  navSig = sig
+  const item = (kind, value, label, count, cls = "") =>
+    `<button class="navitem ${cls}" data-k="${kind}" data-v="${value ?? ""}" aria-current="${view.kind === kind && String(view.value ?? "") === String(value ?? "")}">
+      <span class="n">${label}</span><span class="c">${count}</span></button>`
+  $("#nav-views").innerHTML =
+    item("all", null, "All", state.sessions.length) + item("running", null, "Running", state.totals.busy ?? 0)
+  const open = (state.tasks ?? []).filter((t) => !["done", "cancelled"].includes(t.status)).length
+  const mine = (state.tasks ?? []).filter((t) => t.owner === "human" && !["done", "cancelled"].includes(t.status))
+  $("#nav-work").innerHTML =
+    item("needs", null, `Needs you`, mine.length ? `<b>${mine.length}</b>` : "") +
+    item("board", null, "Task board", open) +
+    `<button class="navitem navadd" id="run-pipeline">▸ Run a pipeline</button>`
+  $("#run-pipeline").onclick = openPipelineDialog
+  // One row per project: its work and its conversation are the same thing.
+  $("#nav-projects").innerHTML = projects
+    .map((p) =>
+      item(
+        "project",
+        p.id,
+        `${p.busy ? `<span class="dotm" style="background:var(--busy)"></span>` : ""}${esc(p.name)}`,
+        `${p.unread ? `<b>${p.unread}✉</b> ` : ""}${p.open || ""}`,
+      ),
+    )
+    .join("")
+  for (const b of $$(".navitem[data-k]")) {
+    b.onclick = () => {
+      view = { kind: b.dataset.k, value: b.dataset.v || null }
+      navSig = null
+      render()
+      if (b.dataset.k === "room") openRoom(b.dataset.v)
+    }
+  }
+}
+
+function render(fromStream = false) {
+  const t = state.totals ?? {}
+  $("#s-busy").textContent = t.busy ?? 0
+  $("#s-sessions").textContent = t.sessions ?? 0
+  $("#s-tpm").textContent = fmt.n(t.tokPerMin)
+  $("#s-tools").textContent = fmt.n(t.tools)
+  $("#s-cost").textContent = fmt.money(t.usd)
+  $("#s-cost-l").textContent = t.unpriced ? `est. spend · ${t.unpriced} unpriced` : "est. spend"
+  if (t.spark) spark($("#global-spark"), t.spark.tok, t.busy ? COLOR.busy : COLOR.idle, { w: 170 })
+  $("#updated").textContent = new Date(state.at).toLocaleTimeString()
+  $("#conn").textContent = state.serverStatus ?? ""
+
+  const loose = $("#loose")
+  loose.hidden = !state.unmanaged
+  if (state.unmanaged && !loose.dataset.n) {
+    loose.dataset.n = state.unmanaged
+    loose.innerHTML = `<span>opencode knows about <b class="num">${state.unmanaged}</b> other session(s) botfarm is not managing.</span>
+      <button class="ghost tiny" id="loose-add" style="margin-left:auto">Add some…</button>`
+    $("#loose-add").onclick = openAdopt
+  }
+
+  renderRuns()
+  const needsView = view.kind === "needs"
+  const boardView = view.kind === "board"
+  const projectView = view.kind === "project"
+  $("#kanban").hidden = !boardView
+  $("#grid").hidden = boardView || projectView || needsView
+  $("#project-view").hidden = !(projectView || needsView)
+  $("#runs").hidden = projectView || needsView
+  if (boardView) renderBoard(state.tasks ?? [], "#kanban")
+  if (needsView) renderNeeds()
+  if (projectView) renderProject()
+
+  const visible = visibleSessions()
+  $("#scope").textContent =
+    view.kind === "project" ? `project ${view.value}`
+    : view.kind === "room" ? (state.rooms.find((r) => r.id === view.value)?.name ?? "")
+    : ""
+  $("#empty").hidden = state.sessions.length > 0
+  const grid = $("#grid")
+  const seen = new Set()
+  visible.forEach((s, i) => {
+    seen.add(s.id)
+    let r = pods.get(s.id)
+    if (!r) { r = podEl(s); pods.set(s.id, r) }
+    updatePod(r, s)
+    const at = grid.children[i]
+    if (at !== r.el && !r.el.contains(document.activeElement)) grid.insertBefore(r.el, at ?? null)
+  })
+  for (const [id, r] of pods) if (!seen.has(id)) { r.el.remove(); pods.delete(id) }
+
+  renderNav()
+  $("#feed").innerHTML = (state.events ?? [])
+    .map((e) => `<div class="${e.level}">${new Date(e.at).toLocaleTimeString()}  ${esc(e.text)}</div>`)
+    .join("")
+  if (fromStream && openId) refreshModal()
+  if (fromStream && roomId) renderRoom()
+  if (fromStream && taskId) renderTask()
+}
+
+// ------------------------------------------------------------------ task board
+const COLUMNS = ["backlog", "blocked", "queued", "active", "review", "done", "cancelled"]
+const boardSig = new Map()
+function renderBoard(tasks, target) {
+  const cols = COLUMNS.map((status) => ({ status, tasks: tasks.filter((t) => t.status === status) }))
+    .filter((c) => c.tasks.length || ["backlog", "queued", "active", "review", "done"].includes(c.status))
+  const sig = JSON.stringify(cols.map((c) => [c.status, c.tasks.map((t) => [t.id, t.status, t.title, t.assignee])]))
+  if (sig === boardSig.get(target)) return
+  boardSig.set(target, sig)
+  const byId = Object.fromEntries(state.sessions.map((s) => [s.id, s]))
+  $(target).innerHTML = cols.map((c) => `<div class="col ${c.status}">
+    <h5>${c.status}<span>${c.tasks.length}</span></h5>
+    ${c.tasks.map((t) => {
+      const who = byId[t.assignee]
+      return `<div class="card ${t.kind === "question" ? "question" : ""}" data-t="${t.id}">
+        <div class="t">${esc(t.title)}</div>
+        <div class="s">
+          ${
+            t.owner === "human"
+              ? `<span style="color:var(--wait)">you</span>`
+              : who
+                ? `<img src="${avatarUrl(who)}" alt="" />@${esc(who.handle ?? "")}`
+                : t.role
+                  ? `<span>any ${esc(t.role)}</span>`
+                  : "unassigned"
+          }
+          ${t.stage ? `<span class="stage">${esc(t.stage)}</span>` : ""}
+          ${t.dependsOn?.length ? `<span>waits on ${t.dependsOn.length}</span>` : ""}
+        </div></div>`
+    }).join("")}
+  </div>`).join("")
+  for (const el of $$(`${target} .card`)) el.onclick = () => openTask(el.dataset.t)
+}
+
+/**
+ * Everything waiting on you, questions first — they are blocking a bot that
+ * has stopped to ask rather than guessing.
+ */
+let needsSig = null
+function renderNeeds() {
+  const mine = (state.tasks ?? [])
+    .filter((t) => t.owner === "human" && !["done", "cancelled"].includes(t.status))
+    .sort((a, b) => (b.kind === "question") - (a.kind === "question") || a.created - b.created)
+  const sig = JSON.stringify(mine.map((t) => [t.id, t.status, t.answer]))
+  const el = $("#project-view")
+  if (sig === needsSig) return
+  needsSig = sig
+  const byId = Object.fromEntries(state.sessions.map((x) => [x.id, x]))
+  el.innerHTML = `
+    <div class="phead"><h2>Needs you</h2><span class="sub">${mine.length} open</span></div>
+    ${
+      mine.length
+        ? mine.map((t) => {
+            const who = byId[t.askedBy]
+            return `<div class="ask" data-t="${t.id}">
+              <div class="asker">${who ? `<img src="${avatarUrl(who)}" alt="" />@${esc(who.handle ?? "")}` : "pipeline"}
+                ${t.kind === "question" ? "asks" : "needs you"} · ${esc(t.projectId ?? "")}</div>
+              <div class="q">${esc(t.brief || t.title)}</div>
+              ${t.options?.length ? `<div class="opts">${t.options.map((o) => `<button class="tiny opt" data-t="${t.id}" data-a="${esc(o)}">${esc(o)}</button>`).join("")}</div>` : ""}
+              <div class="reply"><input placeholder="Answer…  (⏎)" data-t="${t.id}" />
+                <button class="primary tiny send" data-t="${t.id}">Answer</button>
+                <button class="ghost tiny open" data-t="${t.id}">Open task</button></div>
+            </div>`
+          }).join("")
+        : `<div class="empty"><b>Nothing waiting on you</b>When a bot needs a decision it will appear here, and the answer goes straight back to it.</div>`
+    }`
+  const answer = async (id, text) => {
+    if (!text?.trim()) return
+    await api(`/api/tasks/${id}/answer`, { method: "POST", body: { answer: text.trim() } }).catch((e) => alert(e.message))
+    needsSig = null
+    render()
+  }
+  for (const b of $$(".ask .opt", el)) b.onclick = () => answer(b.dataset.t, b.dataset.a)
+  for (const b of $$(".ask .send", el)) {
+    b.onclick = () => answer(b.dataset.t, $(`.ask .reply input[data-t="${b.dataset.t}"]`, el).value)
+  }
+  for (const i of $$(".ask .reply input", el)) {
+    i.onkeydown = (e) => { if (e.key === "Enter") answer(i.dataset.t, i.value) }
+  }
+  for (const b of $$(".ask .open", el)) b.onclick = () => openTask(b.dataset.t)
+}
+
+/**
+ * A project in one screen: who is working, what is on the board, and the
+ * conversation about it — rather than three places to visit in turn.
+ */
+let projectSig = null
+function renderProject() {
+  const p = (state.projects ?? []).find((x) => x.id === view.value)
+  if (!p) { view = { kind: "all", value: null }; return }
+  const tasks = (state.tasks ?? []).filter((t) => t.projectId === p.id)
+  const room = (state.rooms ?? []).find((r) => r.id === p.roomId)
+  const sig = JSON.stringify([p, tasks.map((t) => [t.id, t.status]), room?.messages?.length, room?.muted])
+  const el = $("#project-view")
+  const prior = $("#pc-input")
+  const keep = prior ? { text: prior.value, focused: document.activeElement === prior } : {}
+  if (sig !== projectSig) {
+    projectSig = sig
+    // The board element is about to be replaced, so its cached signature no
+    // longer describes anything on screen.
+    boardSig.delete("#p-kanban")
+    el.innerHTML = `
+      <div class="phead">
+        <h2>${esc(p.name)}</h2>
+        <span class="sub">${esc(p.branch ?? "")}${p.worktree ? " · " + esc(fmt.path(p.worktree, 2)) : ""}</span>
+        <span class="right">
+          <button class="ghost tiny" id="p-newtask">New task</button>
+          <button class="ghost tiny" id="p-addsession">Add session</button>
+          <button class="ghost tiny" id="p-runpipe">Run a pipeline</button>
+        </span>
+      </div>
+      <div class="crew">${
+        p.sessions.length
+          ? p.sessions.map((s) => `<span class="who" data-s="${s.id}" data-status="${esc(s.status)}">
+              <img src="/avatar/${encodeURIComponent(s.id)}.svg?h=${encodeURIComponent(s.handle ?? "")}" alt="" />@${esc(s.handle ?? "")}
+              <span style="color:var(--faint)">${esc(s.status)}</span><span class="doing"></span></span>`).join("")
+          : `<span class="note">No sessions in this project yet.</span>`
+      }</div>
+      <div class="project">
+        <div class="work"><div class="kanban" id="p-kanban"></div></div>
+        <div class="chatpane">
+          <div class="ph"><b>${esc(room?.name ?? "#" + p.id)}</b>
+            <span class="note" style="margin:0">${room ? `${room.members.length} members` : "chat starts with the second session"}</span>
+            ${room ? `<button class="ghost tiny" id="pc-manage" style="margin-left:auto">Manage</button>` : ""}</div>
+          <div class="log" id="pc-log">${
+            room?.messages?.length
+              ? room.messages.map((m) => {
+                  const member = room.members.find((x) => x.id === m.fromId)
+                  return `<div class="turn ${m.from === "operator" ? "op" : ""}">
+                    ${m.from === "operator" ? `<span class="avdot"></span>` : `<img src="/avatar/${encodeURIComponent(m.fromId ?? m.from)}.svg?h=${encodeURIComponent(member?.handle ?? m.from)}" alt="" />`}
+                    <div class="c"><div class="m">${m.from === "operator" ? "operator" : "@" + esc(m.from)} · ${new Date(m.at).toLocaleTimeString()}</div>
+                    <div class="b">${esc(m.text)}</div></div></div>`
+                }).join("")
+              : `<div class="note">Nothing said yet. Anything you post here reaches every session in the project.</div>`
+          }</div>
+          <div class="composer"><textarea id="pc-input" placeholder="Post to the project…  (@handle reaches one)"></textarea>
+            <button class="primary" id="pc-send">Post</button></div>
+        </div>
+      </div>`
+    const log = $("#pc-log", el)
+    log.scrollTop = log.scrollHeight
+    for (const w of $$(".crew .who", el)) w.onclick = () => openSession(w.dataset.s)
+    if ($("#pc-manage", el)) $("#pc-manage", el).onclick = () => openRoom(room.id)
+    $("#p-newtask", el).onclick = () => openTaskDialog(p.id)
+    $("#p-runpipe", el).onclick = () => openPipelineDialog(p)
+    $("#p-addsession", el).onclick = () => { groupOptions($("#f-group"), p.id); $("#f-repo").value = p.repo ?? ""; $("#new-dialog").showModal() }
+    const send = async () => {
+      const message = $("#pc-input", el).value.trim()
+      if (!message) return
+      $("#pc-input", el).value = ""
+      await api(`/api/projects/${p.id}/chat`, { method: "POST", body: { message } }).catch((e) => alert(e.message))
+    }
+    $("#pc-send", el).onclick = send
+    $("#pc-input", el).onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send() } }
+    const input = $("#pc-input", el)
+    if (keep.text) input.value = keep.text
+    if (keep.focused) input.focus()
+  }
+  renderBoard(tasks, "#p-kanban")
+  // What each bot is doing right now, refreshed on every push.
+  const byId = Object.fromEntries(state.sessions.map((s) => [s.id, s]))
+  for (const w of $$(".crew .who", el)) {
+    const s = byId[w.dataset.s]
+    const line = $(".doing", w)
+    if (!s || !line) continue
+    const doing = s.status === "busy" && s.currentTool ? `▸ ${s.currentTool.name}` : s.lastText || ""
+    line.textContent = doing
+    line.title = doing
+  }
+}
+
+let runsSig = null
+function renderRuns() {
+  const runs = state.runs ?? []
+  const sig = JSON.stringify(runs.map((r) => [r.id, r.status, r.tasks.map((t) => t.status)]))
+  if (sig === runsSig) return
+  runsSig = sig
+  $("#runs").innerHTML = runs.map((r) => `<div class="run">
+    <div class="rt">${esc(r.title)}</div>
+    <div class="flow">${r.tasks.map((t) => `<span class="step ${esc(t.status)}" title="${esc(t.title ?? "")}">${esc(t.stage)}</span>`).join(`<span class="arrow">→</span>`)}</div>
+    <div class="s" style="margin-top:6px;font-size:10.5px;color:var(--faint);font-family:var(--mono)">${esc(r.pipeline)} · ${esc(r.branch ?? r.repo ?? "")}
+      <a href="/api/runs/${r.id}/export" style="color:var(--dim);margin-left:8px">export yaml</a></div>
+  </div>`).join("")
+}
+
+async function openTask(id) {
+  openId = null; roomId = null; taskId = id; taskSig = null
+  await renderTask(true)
+}
+
+let taskId = null
+let taskSig = null
+async function renderTask(create = false) {
+  let t, files
+  try {
+    t = await api(`/api/tasks/${taskId}`)
+    files = (await api(`/api/tasks/${taskId}/diff`)).files
+  } catch { return closeModal() }
+  const sig = JSON.stringify([t.status, t.handoff, t.notes.length, files])
+  if (!create && sig === taskSig) return
+  taskSig = sig
+  const el = shell(create)
+  const who = state.sessions.find((s) => s.id === t.assignee)
+  // The task and the conversation it is being done in, side by side: knowing
+  // what was asked is useless one click away from seeing what is happening.
+  const chat = who ? await api(`/api/sessions/${who.id}`).catch(() => null) : null
+  el.classList.add("split-modal")
+  el.innerHTML = `
+    <div class="left split">
+      <div class="taskside">
+      <div class="top"><span class="h">${esc(t.title)}</span><span class="s">${esc(t.stage ?? "task")} · ${esc(t.status)}</span>
+        <span class="right"><button class="ghost tiny" id="tk-close">Close</button></span></div>
+        <div class="sec" style="margin:0"><h3>Brief</h3><div class="turn"><div class="c"><div class="b">${esc(t.brief) || "—"}</div></div></div></div>
+        ${t.acceptance?.length ? `<div class="sec"><h3>Acceptance criteria</h3>${t.acceptance.map((a) => `<div class="row"><span class="g">${esc(a)}</span></div>`).join("")}</div>` : ""}
+        ${t.handoff ? `<div class="sec"><h3>Handoff from ${esc(t.handoff.by ?? "")}</h3>
+          <div class="turn"><div class="c"><div class="b">${esc(t.handoff.summary)}</div></div></div>
+          ${t.handoff.acceptance_criteria?.length ? `<div class="note">Criteria: ${t.handoff.acceptance_criteria.map(esc).join(" · ")}</div>` : ""}
+          ${t.handoff.open_questions?.length ? `<div class="note" style="color:var(--busy)">Open: ${t.handoff.open_questions.map(esc).join(" · ")}</div>` : ""}
+        </div>` : ""}
+        <div class="sec"><h3>Changed files</h3>${
+          files.length
+            ? files.map((f) => `<div class="row"><span class="g file" data-f="${esc(f.path)}" style="cursor:pointer;text-decoration:underline">${esc(f.path)}</span>
+                <span class="st">${f.untracked ? "new" : `+${f.added} −${f.removed}`}</span></div>`).join("")
+            : `<div class="note">Nothing changed in this worktree yet.</div>`
+        }<div id="tk-diff"></div></div>
+        ${t.notes.length ? `<div class="sec"><h3>Notes</h3>${t.notes.map((n) => `<div class="row"><span class="st">@${esc(n.by)}</span><span class="g">${esc(n.text)}</span></div>`).join("")}</div>` : ""}
+      </div>
+      <div style="display:flex;flex-direction:column;min-width:0">
+        <div class="top">
+          ${who ? `<img class="avatar" style="width:34px;height:34px" src="${avatarUrl(who)}" alt="" /><span class="h">@${esc(who.handle ?? "")}</span>
+            <span class="s">${esc(who.status)}</span>` : `<span class="s">No session assigned — this task is in the backlog.</span>`}
+          ${who ? `<span class="right"><button class="ghost tiny" id="tk-full">Open session</button></span>` : ""}
+        </div>
+        <div class="transcript" id="tk-chat">${
+          chat?.transcript?.length
+            ? chat.transcript.slice().reverse().map((m) => `<div class="turn ${esc(m.role)}">
+                ${m.role === "assistant" ? `<img src="${avatarUrl(who)}" alt="" />` : `<span class="avdot"></span>`}
+                <div class="c"><div class="m">${m.role === "assistant" ? "@" + esc(who.handle) : esc(m.role)}</div>
+                <div class="b">${esc(m.text)}</div>
+                ${m.tools?.length ? `<div class="tools">${m.tools.map((x) => `<span>${esc(x.name)}</span>`).join("")}</div>` : ""}</div></div>`).join("")
+            : `<div class="empty">${who ? "Nothing in this session yet." : "Assign this task to see the conversation."}</div>`
+        }</div>
+        ${who ? `<div class="composer"><textarea id="tk-say" placeholder="Say something to @${esc(who.handle ?? "")}…  (⏎)"></textarea>
+          <button class="primary" id="tk-send">Send</button></div>` : ""}
+      </div>
+    </div>
+    <div class="side">
+      <div class="sec"><h3>Task</h3><table class="kv">
+        <tr><td>status</td><td>${esc(t.status)}</td></tr>
+        <tr><td>assignee</td><td>${who ? "@" + esc(who.handle) : esc(t.persona ?? "—")}</td></tr>
+        <tr><td>raised by</td><td>${esc(t.createdBy)}</td></tr>
+        <tr><td>blocked by</td><td>${t.dependsOn.length || "—"}</td></tr>
+      </table></div>
+      <div class="sec"><h3>Move to</h3>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          ${["backlog", "queued", "active", "review", "done", "cancelled"].map((c) => `<button class="tiny tk-move ${c === t.status ? "primary" : "ghost"}" data-c="${c}">${c}</button>`).join("")}
+        </div>
+        <div class="note">Moving to queued offers it to the assignee when they next go idle.</div>
+      </div>
+      ${who ? `<div class="sec"><h3>Assignee</h3><div class="row"><img src="${avatarUrl(who)}" style="width:28px;height:28px;border-radius:6px" alt="" />
+        <span class="g">@${esc(who.handle)}</span><button class="ghost tiny" id="tk-open">Open session</button></div></div>` : ""}
+    </div>`
+  const chatLog = $("#tk-chat", el)
+  if (chatLog) chatLog.scrollTop = chatLog.scrollHeight
+  $("#tk-close", el).onclick = closeModal
+  if ($("#tk-open", el)) $("#tk-open", el).onclick = () => openSession(who.id)
+  if ($("#tk-full", el)) $("#tk-full", el).onclick = () => openSession(who.id)
+  const say = $("#tk-say", el)
+  if (say) {
+    const send = async () => {
+      const text = say.value.trim()
+      if (!text) return
+      say.value = ""
+      await api(`/api/sessions/${who.id}/send`, { method: "POST", body: { text } }).catch((e) => alert(e.message))
+      taskSig = null
+      renderTask()
+    }
+    $("#tk-send", el).onclick = send
+    say.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send() } }
+  }
+  for (const b of $$(".tk-move", el)) {
+    b.onclick = async () => { await api(`/api/tasks/${t.id}`, { method: "POST", body: { status: b.dataset.c } }); taskSig = null; renderTask() }
+  }
+  for (const f of $$(".file", el)) {
+    f.onclick = async () => {
+      const { diff } = await api(`/api/tasks/${t.id}/diff?file=${encodeURIComponent(f.dataset.f)}`)
+      $("#tk-diff", el).innerHTML = `<div class="diff">${(diff || "(no diff)").split("\n").slice(0, 600).map((l) =>
+        `<div class="${l.startsWith("+") && !l.startsWith("+++") ? "add" : l.startsWith("-") && !l.startsWith("---") ? "del" : l.startsWith("@@") ? "hunk" : ""}">${esc(l) || " "}</div>`).join("")}</div>`
+    }
+  }
+}
+
+// ------------------------------------------------------------------ modal shell
+function shell(create) {
+  let el = $("#modal")
+  if (!el || create) {
+    $("#scrim")?.remove()
+    $("#modal")?.remove()
+    const scrim = document.createElement("div")
+    scrim.className = "scrim"
+    scrim.id = "scrim"
+    scrim.onclick = closeModal
+    document.body.append(scrim)
+    el = document.createElement("div")
+    el.className = "modal"
+    el.id = "modal"
+    document.body.append(el)
+    document.body.classList.add("modal-open")
+  }
+  return el
+}
+function closeModal() {
+  if (openId) wsSend(`unwatch:${openId}`)
+  live = { id: null, msgs: null, status: null, currentTool: null, at: 0 }
+  openId = null; roomId = null; taskId = null; modalSig = null; roomSig = null; taskSig = null
+  $("#scrim")?.remove()
+  $("#modal")?.remove()
+  document.body.classList.remove("modal-open")
+}
+
+async function openSession(id) {
+  if (openId && openId !== id) wsSend(`unwatch:${openId}`)
+  live = { id, msgs: null, status: null, currentTool: null, at: 0 }
+  wsSend(`watch:${id}`)
+  openId = id; roomId = null; modalSig = null
+  await refreshModal(true)
+}
+
+async function refreshModal(create = false) {
+  $("#modal")?.classList.remove("split-modal")
+  let d
+  try { d = await api(`/api/sessions/${openId}`) } catch { return closeModal() }
+  const prior = $("#m-input")
+  const keep = prior ? { text: prior.value, focused: document.activeElement === prior } : {}
+  const sig = JSON.stringify([d.transcript?.length, d.status, d.currentTool, d.totals, d.permissions?.length, d.policy, d.tools, d.git?.dirty, d.rooms, d.group])
+  if (!create && sig === modalSig) return
+  modalSig = sig
+  const el = shell(create)
+  const old = $(".transcript", el)
+  const atBottom = !old || old.scrollHeight - old.scrollTop - old.clientHeight < 80
+  // The socket keeps the transcript current between refreshes; only fall back
+  // to the detail fetch when no live frame has arrived recently.
+  if (live.id !== d.id || !live.msgs || Date.now() - live.at > 4000) {
+    live = { id: d.id, msgs: (d.transcript ?? []).slice().reverse(), status: d.status, currentTool: d.currentTool, at: live.id === d.id ? live.at : 0 }
+  } else {
+    live.status = d.status
+    live.currentTool = d.currentTool
+  }
+  live.handle = d.handle
+
+  el.innerHTML = `
+    <div class="left">
+      <div class="top">
+        <img class="avatar" style="width:38px;height:38px" src="${avatarUrl(d)}" alt="" />
+        <span class="h">@${esc(d.handle ?? "")}</span><span class="s">${esc(d.name)}</span>
+        <span class="right">
+          <button class="ghost tiny" id="m-compact">Compact</button>
+          <button class="danger tiny" id="m-abort">Abort</button>
+          <button class="ghost tiny" id="m-close">Close</button>
+        </span>
+      </div>
+      <div class="transcript">${transcriptBody(d)}</div>
+      ${d.permissions?.length ? `<div class="perm" style="margin:0 16px 8px"><b>${esc(d.permissions[0].action ?? "permission")}</b>
+        <button class="allow" style="margin-left:auto">Allow once</button><button class="always">Always</button><button class="deny danger">Deny</button></div>` : ""}
+      <div class="composer">
+        <textarea id="m-input" placeholder="Continue this session…  (⏎ to send, ⇧⏎ newline)"></textarea>
+        <button class="primary" id="m-send">Send</button>
+      </div>
+    </div>
+    <div class="side">
+      <div class="sec"><h3>Session</h3><table class="kv">
+        <tr><td>status</td><td>${esc(d.status)}${d.currentTool ? " · " + esc(d.currentTool.name) : ""}</td></tr>
+        <tr><td>worktree</td><td>${esc(fmt.path(d.directory))}</td></tr>
+        <tr><td>branch</td><td>${esc(d.branch ?? "—")}</td></tr>
+        <tr><td>model</td><td>${esc(d.model ?? "—")}</td></tr>
+        <tr><td>changes</td><td>${d.git ? `+${d.git.insertions} −${d.git.deletions} · ${d.git.dirty}` : "—"}</td></tr>
+      </table>
+      <div class="row" style="border:0;padding-top:8px">
+        <span class="st">project</span>
+        <select id="m-group" style="flex:1">${(state.projects ?? []).map((p) => `<option value="${p.id}" ${p.id === d.project ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select>
+        <button class="ghost tiny danger" id="m-release">Remove</button>
+      </div></div>
+
+      <div class="sec"><h3>Cost</h3><table class="kv">
+        <tr><td>input</td><td>${fmt.n(d.totals.input)}</td></tr>
+        <tr><td>output</td><td>${fmt.n(d.totals.output)}</td></tr>
+        <tr><td>cache r/w</td><td>${fmt.n(d.totals.cacheRead)} / ${fmt.n(d.totals.cacheWrite)}</td></tr>
+        <tr><td>context</td><td>${fmt.n(d.contextTokens)}</td></tr>
+        <tr><td>tools</td><td>${d.totals.tools} (${d.totals.toolErrors} err)</td></tr>
+        <tr><td>${d.cost?.estimated ? "estimated" : "reported"}</td><td>${fmt.money(d.cost?.usd)}</td></tr>
+      </table>${
+        d.cost?.unknownModel
+          ? `<div class="note">No price set for <span class="num">${esc(d.cost.unknownModel)}</span>. Add one under "pricing" in ~/.botfarm/config.json.</div>`
+          : d.cost?.estimated
+            ? `<div class="note">Estimated from token counts — the provider reported no cost.</div>`
+            : ""
+      }</div>
+
+      <div class="sec"><h3>Tools</h3>
+        ${(d.tools?.servers ?? []).map((m) => `<div class="row">
+          <span class="g">${esc(m.name)}</span><span class="st">${esc(m.status)}</span>
+          <button class="sw mcp-sw" data-n="${esc(m.name)}" role="switch" aria-checked="${m.connected}"></button></div>`).join("")
+          || `<div class="note">No MCP servers for this worktree.</div>`}
+        ${(d.tools?.builtin ?? []).map((t) => `<div class="row">
+          <span class="g">${esc(t.name)}</span>
+          <button class="sw tool-sw" data-n="${esc(t.name)}" role="switch" aria-checked="${t.enabled}"></button></div>`).join("")}
+        <div class="note">MCP servers toggle live. Built-in tools are written to this worktree's opencode config and apply when the session restarts.</div>
+      </div>
+
+      <div class="sec"><h3>Mesh</h3>
+        <div class="row" style="border:0"><span class="st">peer messages</span>
+          <span class="seg" id="m-talk" style="margin-left:auto">
+            <button data-v="off" aria-pressed="${d.policy.talk === "off"}">Off</button>
+            <button data-v="inbox" aria-pressed="${d.policy.talk === "inbox"}">Receive</button>
+            <button data-v="open" aria-pressed="${d.policy.talk === "open"}">Both</button>
+          </span></div>
+        <div class="row" style="border:0"><span class="st">may open sessions</span>
+          <button class="sw" id="m-spawn" role="switch" aria-checked="${d.policy.spawn}" style="margin-left:auto"></button></div>
+        <div class="row" style="border:0"><span class="st">group chats</span>
+          <span class="seg" id="m-rooms" style="margin-left:auto">
+            <button data-v="off" aria-pressed="${d.policy.rooms === "off"}">Off</button>
+            <button data-v="member" aria-pressed="${d.policy.rooms === "member"}">Member</button>
+            <button data-v="create" aria-pressed="${d.policy.rooms === "create"}">Create</button>
+          </span></div>
+        ${d.rooms?.length ? `<div class="note">In ${d.rooms.map((r) => esc(r.name)).join(", ")}</div>` : ""}
+        ${d.origin ? `<div class="note">Opened by @${esc(d.origin)}</div>` : ""}
+        ${d.mcpUrl && d.policy.talk !== "off" ? `<div class="wire">${esc(d.mcpUrl)}</div>` : ""}
+      </div>
+
+      <div class="sec"><h3>Recent tool calls</h3>${
+        (d.toolLog ?? []).slice(0, 12).map((t) => `<div class="row">
+          <span class="g" style="color:${t.status === "error" ? "var(--error)" : "var(--text)"}">${esc(t.name)}</span>
+          <span class="st">${esc(t.summary ?? "")}</span><span class="st">${fmt.ms(t.ms)}</span></div>`).join("")
+        || `<div class="note">None yet.</div>`
+      }</div>
+    </div>`
+
+  const tr = $(".transcript", el)
+  if (atBottom) tr.scrollTop = tr.scrollHeight
+  tr.addEventListener("toggle", (e) => {
+    const id = e.target.dataset?.p
+    if (id) e.target.open ? openThoughts.add(id) : openThoughts.delete(id)
+  }, true)
+  const input = $("#m-input", el)
+  if (keep.text) input.value = keep.text
+  if (keep.focused) input.focus()
+  const send = async () => {
+    const text = input.value.trim()
+    if (!text) return
+    input.value = ""
+    await api(`/api/sessions/${d.id}/send`, { method: "POST", body: { text } }).catch((e) => alert(e.message))
+    modalSig = null
+    refreshModal()
+  }
+  $("#m-send", el).onclick = send
+  input.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send() } }
+  $("#m-close", el).onclick = closeModal
+  $("#m-abort", el).onclick = () => api(`/api/sessions/${d.id}/abort`, { method: "POST" })
+  $("#m-compact", el).onclick = () => api(`/api/sessions/${d.id}/compact`, { method: "POST" })
+  $("#m-group", el).onchange = (e) => api(`/api/sessions/${d.id}/group`, { method: "POST", body: { project: e.target.value } })
+  $("#m-release", el).onclick = async () => {
+    if (!confirm("Remove from the board? The session itself is not deleted.")) return
+    await api(`/api/sessions/${d.id}/release`, { method: "POST" })
+    closeModal()
+  }
+  for (const b of $$("#m-talk button", el)) b.onclick = () => setPolicy(d.id, { talk: b.dataset.v })
+  for (const b of $$("#m-rooms button", el)) b.onclick = () => setPolicy(d.id, { rooms: b.dataset.v })
+  $("#m-spawn", el).onclick = () => setPolicy(d.id, { spawn: !d.policy.spawn })
+  for (const b of $$(".mcp-sw", el)) {
+    b.onclick = () => api(`/api/sessions/${d.id}/mcp`, { method: "POST", body: { name: b.dataset.n, connected: b.getAttribute("aria-checked") !== "true" } }).then(bump).catch((e) => alert(e.message))
+  }
+  for (const b of $$(".tool-sw", el)) {
+    b.onclick = () => api(`/api/sessions/${d.id}/tools`, { method: "POST", body: { name: b.dataset.n, enabled: b.getAttribute("aria-checked") !== "true" } }).then(bump)
+  }
+  for (const [cls, dec] of [[".allow", "once"], [".always", "always"], [".deny", "reject"]]) {
+    const b = $(cls, el)
+    if (b) b.onclick = () => replyPermission(d.id, dec)
+  }
+}
+// ------------------------------------------------------------------ live transcript
+function transcriptBody(d) {
+  const msgs = live.msgs ?? []
+  if (!msgs.length) return `<div class="empty">Nothing in this session yet.</div>`
+  const who = { id: d.id, handle: d.handle }
+  const body = msgs.map((m) => {
+    const bot = m.role === "assistant"
+    const parts = m.parts?.length ? m.parts : [
+      ...(m.text ? [{ id: m.id + ":t", kind: "text", text: m.text }] : []),
+      ...(m.tools ?? []).map((t, i) => ({ id: m.id + ":" + i, kind: "tool", name: t.name, status: t.status })),
+    ]
+    return `<div class="turn ${esc(m.role)}">
+      ${bot ? `<img src="${avatarUrl(who)}" alt="" />` : `<span class="avdot"></span>`}
+      <div class="c">
+        <div class="m">${bot ? "@" + esc(d.handle) : esc(m.role === "user" ? "operator" : m.role)}${m.at ? " · " + new Date(m.at).toLocaleTimeString() : ""}</div>
+        ${parts.map((p) => partHtml(p, bot)).join("") || `<span style="color:var(--faint)">…</span>`}
+      </div></div>`
+  }).join("")
+  const working = live.status === "busy"
+    ? `<div class="working"><i></i>@${esc(d.handle)} is ${live.currentTool ? `running ${esc(live.currentTool.name)}` : "working"}…</div>`
+    : ""
+  return body + working
+}
+
+function partHtml(p, bot) {
+  if (p.kind === "text") {
+    const text = p.text ?? ""
+    // Briefs and task prompts are long; show the start and let it expand.
+    if (!bot && text.length > 700) {
+      return `<details class="more" data-p="${esc(p.id)}" ${openThoughts.has(p.id) ? "open" : ""}>
+        <summary><div class="b long">${esc(text.slice(0, 700))}</div><span class="lbl">show all ${fmt.n(text.length)} characters</span><span class="lbl less">show less</span></summary>
+        <div class="b">${esc(text)}</div></details>`
+    }
+    return `<div class="b">${esc(text)}</div>`
+  }
+  if (p.kind === "reasoning") {
+    const words = (p.text ?? "").split(/\s+/).filter(Boolean).length
+    return `<details class="think" data-p="${esc(p.id)}" ${openThoughts.has(p.id) ? "open" : ""}>
+      <summary>thinking · ${words} words</summary><div>${esc(p.text ?? "")}</div></details>`
+  }
+  if (p.kind === "tool") {
+    const st = p.status === "completed" ? (p.ms != null ? fmt.ms(p.ms) : "done") : p.status ?? ""
+    const row = `<div class="call s-${esc(p.status ?? "")}"><span class="nm">${esc(p.name ?? "tool")}</span>
+      <span class="sm">${esc(p.summary ?? "")}</span><span class="st">${esc(st)}</span></div>`
+    if (!p.output) return row
+    return `<details data-p="${esc(p.id)}" ${openThoughts.has(p.id) ? "open" : ""}><summary style="list-style:none;cursor:pointer">${row}</summary>
+      <div class="out">${esc(p.output)}</div></details>`
+  }
+  return ""
+}
+
+function onLive(f) {
+  if (!openId || f.sessionId !== openId || live.id !== openId) return
+  live.at = Date.now()
+  if (f.t === "transcript") {
+    // See index.html's onLive: keep the longer text per part so a lagging REST
+    // snapshot can't erase streamed-in text/reasoning while tool parts persist.
+    const prevById = new Map((live.msgs ?? []).map((m) => [m.id, m]))
+    live.msgs = (f.transcript ?? []).slice().reverse().map((m) => {
+      const prev = prevById.get(m.id)
+      if (!prev?.parts?.length || !m.parts?.length) return m
+      const prevParts = new Map(prev.parts.map((p) => [p.id, p]))
+      return { ...m, parts: m.parts.map((p) => {
+        const old = prevParts.get(p.id)
+        if (old && typeof old.text === "string" && typeof p.text === "string" && old.text.length > p.text.length) {
+          return { ...p, text: old.text }
+        }
+        return p
+      }) }
+    })
+    live.status = f.status
+    live.currentTool = f.currentTool
+  } else if (f.t === "part") {
+    if (!live.msgs) return
+    let m = live.msgs.find((x) => x.id === f.messageId)
+    if (!m) {
+      if (!f.messageId) return
+      m = { id: f.messageId, role: "assistant", at: Date.now(), parts: [] }
+      live.msgs.push(m)
+    }
+    m.parts ??= []
+    let part = m.parts.find((x) => x.id === f.part.id)
+    if (!part) { part = { ...f.part }; m.parts.push(part); if (f.delta && !f.part.text) part.text = f.delta }
+    else if (f.delta && f.part.text == null) part.text = (part.text ?? "") + f.delta
+    else Object.assign(part, Object.fromEntries(Object.entries(f.part).filter(([, v]) => v != null)))
+    if (f.part.kind === "tool") live.currentTool = /running|pending/.test(f.part.status) ? { name: f.part.name } : null
+    live.status = "busy"
+  }
+  if (liveFrame) return
+  liveFrame = requestAnimationFrame(() => {
+    liveFrame = 0
+    const tr = $("#modal .transcript")
+    if (!tr || !openId) return
+    const atBottom = tr.scrollHeight - tr.scrollTop - tr.clientHeight < 80
+    tr.innerHTML = transcriptBody({ id: openId, handle: live.handle })
+    if (atBottom) tr.scrollTop = tr.scrollHeight
+  })
+}
+
+const bump = () => { modalSig = null; refreshModal() }
+const setPolicy = (id, body) => api(`/api/sessions/${id}/policy`, { method: "POST", body }).then(bump)
+
+// ------------------------------------------------------------------ room modal
+function openRoom(id) { roomId = id; openId = null; roomSig = null; renderRoom(true) }
+
+function renderRoom(create = false) {
+  const r = (state.rooms ?? []).find((x) => x.id === roomId)
+  if (!r) return closeModal()
+  const sig = JSON.stringify([r.messages.length, r.members.length, r.muted, r.pending, r.stats])
+  if (!create && sig === roomSig) return
+  roomSig = sig
+  const el = shell(create)
+  const prior = $("#r-input")
+  const keep = prior ? { text: prior.value, focused: document.activeElement === prior } : {}
+  const others = state.sessions.filter((s) => !r.members.some((m) => m.id === s.id))
+  el.innerHTML = `
+    <div class="left">
+      <div class="top"><span class="h">${esc(r.name)}</span><span class="s">${r.members.length} members</span>
+        <span class="right">
+          <button class="ghost tiny" id="rm-mute">${r.muted ? "Unmute" : "Mute"}</button>
+          <button class="ghost tiny danger" id="rm-del">Delete</button>
+          <button class="ghost tiny" id="rm-close">Close</button>
+        </span></div>
+      <div class="transcript">${
+        r.messages.length
+          ? r.messages.map((m) => {
+              const member = r.members.find((x) => x.id === m.fromId)
+              return `<div class="turn ${m.from === "operator" ? "op" : ""}">
+                ${m.from === "operator" ? `<span class="avdot"></span>` : `<img src="/avatar/${encodeURIComponent(m.fromId ?? m.from)}.svg?h=${encodeURIComponent(member?.handle ?? m.from)}" alt="" />`}
+                <div class="c"><div class="m">${m.from === "operator" ? "operator" : "@" + esc(m.from)} · ${new Date(m.at).toLocaleTimeString()}</div>
+                <div class="b">${esc(m.text)}</div></div></div>`
+            }).join("")
+          : `<div class="empty">Nothing said yet. Anything you post reaches every member.</div>`
+      }</div>
+      <div class="composer">
+        <textarea id="r-input" placeholder="Post as operator…  (@handle reaches one member immediately)"></textarea>
+        <button class="primary" id="rm-send">Post</button>
+      </div>
+    </div>
+    <div class="side">
+      <div class="sec"><h3>Room</h3>
+        ${r.topic ? `<div class="note" style="margin:0 0 8px">${esc(r.topic)}</div>` : ""}
+        <div class="note">${r.mode === "push"
+          ? "Every message is delivered to every member's next step."
+          : "Mentions are delivered immediately; everyone else gets one digest when they go idle."}</div>
+        ${r.pending ? `<div class="note">${r.pending} message(s) waiting for members to finish their step.</div>` : ""}
+        ${r.muted ? `<div class="note" style="color:var(--busy)">Muted after talking in circles.</div>` : ""}
+      </div>
+      <div class="sec"><h3>Members</h3>
+        ${r.members.map((m) => `<div class="row">
+          <img src="/avatar/${encodeURIComponent(m.id)}.svg?h=${encodeURIComponent(m.handle ?? "")}" style="width:28px;height:28px;border-radius:6px" alt="" />
+          <span class="g">@${esc(m.handle)}</span><span class="st">${esc(m.status)}</span>
+          <button class="ghost tiny rm-kick" data-s="${m.id}">Remove</button></div>`).join("")}
+        ${others.length ? `<select id="rm-add" style="width:100%;margin-top:8px"><option value="">Add a session…</option>
+          ${others.map((o) => `<option value="${o.id}">@${esc(o.handle ?? o.id)} — ${esc(o.name)}</option>`).join("")}</select>` : ""}
+      </div>
+      <div class="sec"><h3>Delivery cost</h3><table class="kv">
+        <tr><td>messages</td><td>${r.stats.posts}</td></tr>
+        <tr><td>deliveries</td><td>${r.stats.deliveries}</td></tr>
+        <tr><td>characters</td><td>${fmt.n(r.stats.charsDelivered)} (~${fmt.n(Math.round(r.stats.charsDelivered / 4))} tok)</td></tr>
+      </table></div>
+    </div>`
+  const tr = $(".transcript", el)
+  tr.scrollTop = tr.scrollHeight
+  const input = $("#r-input", el)
+  if (keep.text) input.value = keep.text
+  if (keep.focused) input.focus()
+  const post = async () => {
+    const message = input.value.trim()
+    if (!message) return
+    input.value = ""
+    await api(`/api/rooms/${r.id}/post`, { method: "POST", body: { message } }).catch((e) => alert(e.message))
+  }
+  $("#rm-send", el).onclick = post
+  input.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); post() } }
+  $("#rm-close", el).onclick = closeModal
+  $("#rm-mute", el).onclick = () => api(`/api/rooms/${r.id}/mute`, { method: "POST", body: { muted: !r.muted } })
+  $("#rm-del", el).onclick = async () => {
+    if (!confirm(`Delete ${r.name}?`)) return
+    await api(`/api/rooms/${r.id}`, { method: "DELETE" })
+    closeModal()
+  }
+  for (const b of $$(".rm-kick", el)) b.onclick = () => api(`/api/rooms/${r.id}/members`, { method: "POST", body: { sessionId: b.dataset.s, remove: true } })
+  const add = $("#rm-add", el)
+  if (add) add.onchange = () => add.value && api(`/api/rooms/${r.id}/members`, { method: "POST", body: { sessionId: add.value } })
+}
+
+// ------------------------------------------------------------------ dialogs
+/**
+ * Probe a typed path before anything is created. "~/workspace/thing" is what
+ * people type, and a repo with services cloned into a gitignored folder needs
+ * a worktree per service — neither is something to discover after the fact.
+ */
+async function probeRepo(prefix) {
+  const input = $(`#${prefix}-repo`)
+  const info = $(`#${prefix}-repo-info`)
+  const list = $(`#${prefix}-services`)
+  const path = input.value.trim()
+  list.hidden = true
+  list.innerHTML = ""
+  if (!path) { info.textContent = ""; return }
+  info.textContent = "checking…"
+  let r
+  try { r = await api("/api/repo?path=" + encodeURIComponent(path)) } catch { info.textContent = ""; return }
+  if (!r.isRepo) {
+    info.innerHTML = `<span style="color:var(--error)">${esc(r.path)} — ${esc(r.reason)}</span>`
+    return
+  }
+  info.innerHTML = `<span class="num">${esc(r.path)}</span>${r.branch ? ` on ${esc(r.branch)}` : ""}` +
+    (r.nested.length ? ` · ${r.nested.length} repositories inside it` : "")
+  if (r.nested.length) {
+    list.hidden = false
+    list.innerHTML =
+      `<label style="color:var(--dim)"><input type="checkbox" id="${prefix}-all" /><span>Give every service its own worktree</span></label>` +
+      r.nested.map((n) => `<label><input type="checkbox" class="svc" value="${esc(n.rel)}" />
+        <span class="num">${esc(n.rel)}</span><span class="d">${esc(n.branch ?? "")}</span></label>`).join("")
+    $(`#${prefix}-all`).onchange = (e) => {
+      for (const c of $$(`#${prefix}-services .svc`)) c.checked = e.target.checked
+    }
+  }
+}
+const chosenServices = (prefix) => $$(`#${prefix}-services .svc:checked`).map((c) => c.value)
+
+const groupOptions = (sel, selected) => {
+  sel.innerHTML = (state.projects ?? []).map((p) => `<option value="${p.id}" ${p.id === selected ? "selected" : ""}>${esc(p.name)}</option>`).join("")
+}
+
+function openTaskDialog(projectId) {
+  groupOptions($("#t-project"), projectId ?? (view.kind === "project" ? view.value : "default"))
+  const fill = () => {
+    const chosen = $("#t-project").value
+    const inProject = state.sessions.filter((s) => (s.project ?? "default") === chosen)
+    $("#t-assignee").innerHTML =
+      `<option value="">Nobody yet — leave in the backlog</option>` +
+      inProject.map((s) => `<option value="${s.id}">@${esc(s.handle ?? s.id)} — ${esc(s.name)}</option>`).join("")
+  }
+  $("#t-project").onchange = fill
+  fill()
+  $("#t-error").textContent = ""
+  $("#task-dialog").showModal()
+}
+$("#t-cancel").onclick = () => $("#task-dialog").close()
+$("#t-create").onclick = async () => {
+  const body = {
+    title: $("#t-title").value.trim(),
+    brief: $("#t-brief").value.trim(),
+    projectId: $("#t-project").value,
+    assignee: $("#t-assignee").value || null,
+  }
+  if (!body.title) return ($("#t-error").textContent = "A title is required.")
+  try {
+    await api("/api/tasks", { method: "POST", body })
+    $("#task-dialog").close()
+    $("#t-title").value = ""
+    $("#t-brief").value = ""
+  } catch (e) { $("#t-error").textContent = e.message }
+}
+$("#new-task").onclick = () => openTaskDialog()
+
+$("#add-project").onclick = () => {
+  $("#pj-sessions").innerHTML = state.sessions
+    .map((s) => `<label><input type="checkbox" value="${s.id}" />
+      <img src="${avatarUrl(s)}" style="width:28px;height:28px;border-radius:6px" alt="" />
+      <span class="num">@${esc(s.handle ?? "")}</span><span class="d">${esc(s.name)}</span></label>`)
+    .join("")
+  $("#pj-error").textContent = ""
+  $("#project-dialog").showModal()
+}
+$("#pj-cancel").onclick = () => $("#project-dialog").close()
+$("#pj-create").onclick = async () => {
+  const name = $("#pj-name").value.trim()
+  if (!name) return ($("#pj-error").textContent = "A name is required.")
+  try {
+    const p = await api("/api/projects", {
+      method: "POST",
+      body: { name, repo: $("#pj-repo").value.trim() || null, sessions: $$("#pj-sessions input:checked").map((i) => i.value) },
+    })
+    $("#project-dialog").close()
+    $("#pj-name").value = ""
+    $("#pj-repo").value = ""
+    view = { kind: "project", value: p.id }
+    navSig = null
+    render()
+  } catch (e) { $("#pj-error").textContent = e.message }
+}
+
+async function openAdopt() {
+  groupOptions($("#a-group"))
+  await loadLoose("")
+  $("#adopt-dialog").showModal()
+}
+async function loadLoose(q) {
+  const { sessions, total } = await api("/api/unmanaged?q=" + encodeURIComponent(q))
+  $("#a-list").innerHTML = sessions.length
+    ? sessions.map((s) => `<label><input type="checkbox" value="${s.id}" />
+        <span>${esc(s.title)}</span><span class="d">${esc(fmt.path(s.directory, 2))} · ${fmt.ago(s.updated)}</span></label>`).join("")
+    : `<div class="note" style="padding:10px">Nothing matches. ${total} session(s) known to opencode.</div>`
+}
+$("#a-search").oninput = (e) => loadLoose(e.target.value)
+$("#a-cancel").onclick = () => $("#adopt-dialog").close()
+$("#a-add").onclick = async () => {
+  const ids = $$("#a-list input:checked").map((i) => i.value)
+  if (!ids.length) return
+  await api("/api/adopt", { method: "POST", body: { ids, group: $("#a-group").value } })
+  $("#adopt-dialog").close()
+  $("#loose").dataset.n = ""
+}
+$("#add-existing").onclick = openAdopt
+
+$("#new-pod").onclick = () => { groupOptions($("#f-group")); $("#new-dialog").showModal() }
+$("#f-repo").onchange = () => probeRepo("f")
+$("#f-repo").onblur = () => probeRepo("f")
+$("#p-repo").onchange = () => probeRepo("p")
+$("#p-repo").onblur = () => probeRepo("p")
+$("#f-cancel").onclick = () => $("#new-dialog").close()
+$("#f-create").onclick = async () => {
+  const body = {
+    repo: $("#f-repo").value.trim(),
+    branch: $("#f-branch").value.trim() || null,
+    task: $("#f-task").value.trim() || null,
+    group: $("#f-group").value,
+    services: chosenServices("f"),
+  }
+  if (!body.repo) return ($("#f-error").textContent = "A repository path is required.")
+  $("#f-create").disabled = true
+  try {
+    await api("/api/sessions", { method: "POST", body })
+    $("#new-dialog").close()
+    $("#f-task").value = ""
+    $("#f-branch").value = ""
+    $("#f-error").textContent = ""
+  } catch (e) {
+    $("#f-error").textContent = e.message
+  }
+  $("#f-create").disabled = false
+}
+
+
+let pipelineDefs = { pipelines: [], personas: [], problems: [] }
+async function openPipelineDialog(project) {
+  pipelineDefs = await api("/api/pipelines")
+  if (project) {
+    $("#p-repo").value = project.repo ?? ""
+    $("#p-branch").value = project.branch ?? ""
+    probeRepo("p")
+  }
+  $("#pipe-dialog").dataset.project = project?.id ?? ""
+  $("#p-pipeline").innerHTML = pipelineDefs.pipelines.map((p) => `<option value="${p.id}">${esc(p.title)}</option>`).join("")
+  showStages()
+  $("#p-error").textContent = pipelineDefs.problems.length
+    ? pipelineDefs.problems.map((p) => `${p.file}: ${p.problems.join("; ")}`).join("\n")
+    : ""
+  $("#pipe-dialog").showModal()
+}
+function showStages() {
+  const def = pipelineDefs.pipelines.find((p) => p.id === $("#p-pipeline").value)
+  $("#p-stages").textContent = def
+    ? def.stages.map((s) => s.persona).join(" → ") + (def.description ? ` — ${def.description}` : "")
+    : ""
+}
+$("#p-pipeline").onchange = showStages
+$("#p-edit").onclick = () => openEditor("pipelines", $("#p-pipeline").value)
+$("#p-personas").onclick = () => {
+  const id = prompt("Which persona?\n\n" + pipelineDefs.personas.map((x) => x.id).join(", "), pipelineDefs.personas[0]?.id)
+  if (id) openEditor("personas", id)
+}
+
+/**
+ * Editing a pipeline in the app and editing the YAML by hand are the same
+ * file. The structured view is for the common edits — add a phase, move it,
+ * change who does it, change what it is handed — and the YAML tab is there
+ * for everything the form does not cover, so the form never becomes a ceiling.
+ */
+let editing = null
+async function openEditor(kind, id) {
+  const def = await api(`/api/${kind}/${id}`)
+  editing = { kind, id, doc: def.doc }
+  $("#ed-title").textContent = `${kind === "personas" ? "Persona" : "Pipeline"}: ${id}`
+  $("#ed-file").textContent = def.file ?? ""
+  $("#ed-error").textContent = ""
+  $("#ed-yaml").hidden = true
+  $("#ed-body").hidden = false
+  $("#ed-yaml-toggle").textContent = "Edit as YAML"
+  renderEditor()
+  $("#edit-dialog").showModal()
+}
+
+function renderEditor() {
+  const { kind, doc } = editing
+  const models = [...new Set(state.sessions.map((s) => s.model).filter(Boolean))]
+  if (kind === "personas") {
+    $("#ed-body").innerHTML = `
+      <div class="stagebox">
+        <label>Title</label><input id="e-title" value="${esc(doc.title ?? "")}" style="width:100%" />
+        <label>Role — decides the vocabulary its handle is drawn from (qa, dev, product, reviewer, ops, research, writer)</label>
+        <input id="e-role" value="${esc(doc.role ?? doc.id ?? "")}" style="width:100%" />
+        <label>Model — blank uses the session default</label>
+        <input id="e-model" list="e-models" value="${esc(doc.model ?? "")}" style="width:100%" />
+        <datalist id="e-models">${models.map((m) => `<option value="${esc(m)}">`).join("")}</datalist>
+        <label>Tools it may use — comma separated, blank means everything the session has</label>
+        <input id="e-tools" value="${esc((doc.tools ?? []).join(", "))}" style="width:100%" />
+        <label>Handle adjectives — comma separated, blank uses the role's</label>
+        <input id="e-adj" value="${esc((doc.adjectives ?? []).join(", "))}" style="width:100%" />
+        <div class="recv" style="margin-top:10px">
+          <label><input type="checkbox" id="e-spawn" ${doc.may_spawn ? "checked" : ""} /> may open new sessions</label>
+          <label>peer messages
+            <select id="e-talk">${["open", "inbox", "off"].map((v) => `<option ${(doc.talk ?? "open") === v ? "selected" : ""}>${v}</option>`).join("")}</select></label>
+          <label>group chats
+            <select id="e-rooms">${["member", "create", "off"].map((v) => `<option ${(doc.rooms ?? "member") === v ? "selected" : ""}>${v}</option>`).join("")}</select></label>
+        </div>
+        <label>Brief — the first thing it is told, before any task</label>
+        <textarea id="e-prompt" style="min-height:200px">${esc(doc.prompt ?? "")}</textarea>
+      </div>`
+    return
+  }
+
+  const personas = pipelineDefs.personas.map((p) => p.id)
+  const stages = doc.stages ?? []
+  $("#ed-body").innerHTML = `
+    <div class="stagebox">
+      <label>Title</label><input id="e-title" value="${esc(doc.title ?? "")}" style="width:100%" />
+      <label>Description</label><input id="e-desc" value="${esc(doc.description ?? "")}" style="width:100%" />
+      <label>Shared context — prepended to every bot's brief in this pipeline</label>
+      <textarea id="e-context" style="min-height:60px">${esc(doc.context ?? "")}</textarea>
+    </div>
+    ${stages.map((st, i) => `
+      <div class="stagebox" data-i="${i}">
+        <div class="hd">
+          <input class="sid" value="${esc(st.id ?? "")}" data-f="id" />
+          <select data-f="persona" ${st.human ? "disabled" : ""}>
+            ${personas.map((x) => `<option ${x === st.persona ? "selected" : ""}>${esc(x)}</option>`).join("")}
+          </select>
+          <label style="margin:0;color:var(--dim);font-size:11.5px;white-space:nowrap;display:inline-flex;align-items:center;gap:5px"><input type="checkbox" data-f="human" style="width:auto" ${st.human ? "checked" : ""} /> yours, not a bot's</label>
+          <span class="sp">
+            <button class="ghost tiny" data-move="-1" ${i === 0 ? "disabled" : ""}>↑</button>
+            <button class="ghost tiny" data-move="1" ${i === stages.length - 1 ? "disabled" : ""}>↓</button>
+            <button class="ghost tiny danger" data-del="1">Remove</button>
+          </span>
+        </div>
+        <label>Phase title</label><input value="${esc(st.title ?? "")}" data-f="title" style="width:100%" />
+        <label>Receives — which earlier phases' handoffs this one is given</label>
+        <div class="recv">${
+          stages.filter((o, j) => j < i).map((o) => `<label><input type="checkbox" data-recv="${esc(o.id)}" ${(st.receives ?? []).includes(o.id) ? "checked" : ""} /> ${esc(o.id)}</label>`).join("")
+            || `<span class="note" style="margin:0">nothing before it</span>`
+        }</div>
+        <label>Prompt — mustache over story, acceptance_criteria and handoffs.&lt;phase&gt;</label>
+        <textarea data-f="prompt">${esc(st.prompt ?? "")}</textarea>
+      </div>`).join("")}
+    <button class="ghost" id="e-add">+ Add a phase</button>`
+
+  const read = () => {
+    doc.title = $("#e-title").value
+    doc.description = $("#e-desc").value
+    doc.context = $("#e-context").value || undefined
+    doc.stages = $$("#ed-body .stagebox[data-i]").map((box) => {
+      const g = (f) => $(`[data-f="${f}"]`, box)
+      return {
+        id: g("id").value.trim(),
+        persona: g("human").checked ? undefined : g("persona").value,
+        human: g("human").checked || undefined,
+        title: g("title").value.trim() || undefined,
+        receives: $$("[data-recv]", box).filter((c) => c.checked).map((c) => c.dataset.recv),
+        prompt: g("prompt").value || undefined,
+      }
+    })
+  }
+  editing.read = read
+  for (const box of $$("#ed-body .stagebox[data-i]")) {
+    const i = Number(box.dataset.i)
+    $("[data-move='-1']", box).onclick = () => { read(); const [x] = doc.stages.splice(i, 1); doc.stages.splice(i - 1, 0, x); renderEditor() }
+    $("[data-move='1']", box).onclick = () => { read(); const [x] = doc.stages.splice(i, 1); doc.stages.splice(i + 1, 0, x); renderEditor() }
+    $("[data-del]", box).onclick = () => { read(); doc.stages.splice(i, 1); renderEditor() }
+    $("[data-f='human']", box).onchange = () => { read(); renderEditor() }
+  }
+  $("#e-add").onclick = () => {
+    read()
+    doc.stages.push({ id: "phase" + (doc.stages.length + 1), persona: personas[0], receives: doc.stages.map((x) => x.id), prompt: "{{story}}" })
+    renderEditor()
+  }
+}
+
+$("#ed-yaml-toggle").onclick = async () => {
+  const showingYaml = !$("#ed-yaml").hidden
+  if (showingYaml) {
+    $("#ed-yaml").hidden = true
+    $("#ed-body").hidden = false
+    $("#ed-yaml-toggle").textContent = "Edit as YAML"
+  } else {
+    editing.read?.()
+    if (editing.kind === "personas") readPersona()
+    const def = await api(`/api/${editing.kind}/${editing.id}`)
+    $("#ed-yaml").value = def.yaml
+    $("#ed-yaml").hidden = false
+    $("#ed-body").hidden = true
+    $("#ed-yaml-toggle").textContent = "Back to the form"
+  }
+}
+function readPersona() {
+  const d = editing.doc
+  d.title = $("#e-title").value
+  d.role = $("#e-role").value.trim() || undefined
+  d.model = $("#e-model").value.trim() || undefined
+  d.tools = $("#e-tools").value.split(",").map((x) => x.trim()).filter(Boolean)
+  d.adjectives = $("#e-adj").value.split(",").map((x) => x.trim()).filter(Boolean)
+  if (!d.tools.length) delete d.tools
+  if (!d.adjectives.length) delete d.adjectives
+  d.may_spawn = $("#e-spawn").checked || undefined
+  d.talk = $("#e-talk").value
+  d.rooms = $("#e-rooms").value
+  d.prompt = $("#e-prompt").value
+}
+$("#ed-cancel").onclick = () => $("#edit-dialog").close()
+$("#ed-save").onclick = async () => {
+  try {
+    let body
+    if (!$("#ed-yaml").hidden) body = { yaml: $("#ed-yaml").value }
+    else {
+      if (editing.kind === "personas") readPersona()
+      else editing.read?.()
+      body = { doc: editing.doc }
+    }
+    const saved = await api(`/api/${editing.kind}/${editing.id}`, { method: "PUT", body })
+    $("#ed-error").textContent = saved.problems?.length
+      ? "Saved, but: " + saved.problems.join("\n")
+      : ""
+    pipelineDefs = await api("/api/pipelines")
+    showStages()
+    if (!saved.problems?.length) $("#edit-dialog").close()
+  } catch (e) {
+    $("#ed-error").textContent = e.message
+  }
+}
+$("#p-cancel").onclick = () => $("#pipe-dialog").close()
+$("#p-reload").onclick = async () => { await api("/api/pipelines/reload", { method: "POST" }); openPipelineDialog() }
+$("#p-run").onclick = async () => {
+  const body = {
+    pipeline: $("#p-pipeline").value,
+    repo: $("#p-repo").value.trim(),
+    branch: $("#p-branch").value.trim() || null,
+    story: $("#p-story").value.trim(),
+    services: chosenServices("p"),
+    project: $("#pipe-dialog").dataset.project || undefined,
+  }
+  if (!body.repo || !body.story) return ($("#p-error").textContent = "A repository and a story are both required.")
+  $("#p-run").disabled = true
+  try {
+    await api("/api/runs", { method: "POST", body })
+    $("#pipe-dialog").close()
+    $("#p-story").value = ""
+    view = { kind: "board", value: null }
+    navSig = null
+    render()
+  } catch (e) { $("#p-error").textContent = e.message }
+  $("#p-run").disabled = false
+}
+
+$("#filter").oninput = (e) => { filterText = e.target.value.toLowerCase(); render() }
+$("#abort-all").onclick = async () => {
+  const running = visibleSessions().filter((s) => s.status === "busy")
+  if (!running.length || !confirm(`Abort ${running.length} running session(s)?`)) return
+  await Promise.all(running.map((s) => api(`/api/sessions/${s.id}/abort`, { method: "POST" })))
+}
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && (openId || roomId)) closeModal()
+  if (e.key === "/" && !["INPUT", "TEXTAREA"].includes(document.activeElement.tagName)) { e.preventDefault(); $("#filter").focus() }
+})
+
+/**
+ * Websocket first, EventSource if it will not connect. Both are pushes — the
+ * dashboard has never polled — but the socket is cheaper per frame and lets us
+ * ask for a resync after a reconnect instead of waiting for the next change.
+ */
+function connect() {
+  let ws
+  let fellBack = false
+  const fallback = () => {
+    if (fellBack) return
+    fellBack = true
+    const es = new EventSource("/api/stream")
+    es.onmessage = (e) => { state = JSON.parse(e.data); render(true) }
+    es.onerror = () => { $("#conn").textContent = "dashboard offline" }
+  }
+  const open = () => {
+    try {
+      ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/socket`)
+    } catch {
+      return fallback()
+    }
+    const guard = setTimeout(() => { if (ws.readyState !== 1) { try { ws.close() } catch {} ; fallback() } }, 2500)
+    ws.onopen = () => {
+      clearTimeout(guard)
+      sock = ws
+      ws.send("resync")
+      if (openId) ws.send(`watch:${openId}`)
+    }
+    ws.onmessage = (e) => {
+      const msg = JSON.parse(e.data)
+      if (msg.t) return onLive(msg)
+      state = msg
+      render(true)
+    }
+    ws.onclose = () => {
+      clearTimeout(guard)
+      if (fellBack) return
+      $("#conn").textContent = "reconnecting…"
+      setTimeout(open, 1500)
+    }
+    ws.onerror = () => { if (ws.readyState !== 1) fallback() }
+  }
+  open()
+}
+connect()
+// Re-render on a tick only to keep the relative clocks honest; no network.
+setInterval(() => render(), 1000)
+</script>
+</body>
+</html>
