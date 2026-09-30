@@ -13,11 +13,39 @@ and — if you allow it — let them talk to each other.
 [![dependencies](https://img.shields.io/badge/dependencies-0-f59f00)](package.json)
 [![license](https://img.shields.io/badge/license-MIT-7950f2)](LICENSE)
 
-<img src="https://raw.githubusercontent.com/dirwin517/bot-farm/main/imgs/FARM.png" alt="The Farm view: bots walk from the farmhouse to the crops they're working on" width="100%">
+<img src="imgs/FARM.png" alt="The Farm view: bots walk from the farmhouse to the crops they're working on" width="100%">
 
 <sub>The <b>Farm</b> view — every card is a crop, every bot walks to the one it's working on.</sub>
 
 </div>
+
+---
+
+> ## ⚠️ Big, important, please-actually-read-this disclaimer
+>
+> **BotFarm drives AI agents. AI makes mistakes.** Sometimes small ones, sometimes confident,
+> creative, spectacular ones.
+>
+> These bots can run commands, edit and delete files, push branches and talk to each other,
+> all with whatever access *you* give them. If a bot:
+>
+> - 🔥 deletes everything you own (your repo, your home folder, your will to live on a Friday afternoon),
+> - 🤗 decides to "just quickly" hack into Hugging Face, or anywhere else,
+> - 💸 burns through your cloud budget chasing a flaky test for six hours,
+> - 🐐 orders 400 goats to your house because the acceptance criteria said "herd the requests",
+> - 🤖 or does anything else unexpected, unwise or illegal,
+>
+> …**that is not my fault.** You started the farm; you own what it harvests.
+>
+> **Use it at your own discretion, and with supervision:**
+>
+> - Keep an eye on your bots. Don't leave them unattended with access you'd regret.
+> - Run them in worktrees, containers or sandboxes, never with production credentials.
+> - Set [limits](#limits) so they stop and ask before spending too much.
+> - Review every change before it reaches your real repos. That's why [Apply to my repos](#apply-to-my-repos) never commits for you.
+>
+> BotFarm is provided **"as is", without warranty of any kind**. See the [MIT License](LICENSE).
+> By using it you accept all responsibility for what your bots do.
 
 ---
 
@@ -54,28 +82,28 @@ Then open **http://127.0.0.1:4777** and hit **Start a workstream**.
 A **workspace** is a folder and its opencode config. Each **workstream** is one story on its own branch,
 with its own bots, chat and board — run as many side by side as you like.
 
-<img src="https://raw.githubusercontent.com/dirwin517/bot-farm/main/imgs/MultiTeamRuns.png" alt="Workspace home page showing four workstreams, each with its own team of bots" width="100%">
+<img src="imgs/MultiTeamRuns.png" alt="Workspace home page showing four workstreams, each with its own team of bots" width="100%">
 
 ### 2. Start a workstream
 
 Choose a pipeline, paste the story (with its acceptance criteria), pick which repos go in the worktree,
 and optionally set a budget. Every bot gets the full story.
 
-<img src="https://raw.githubusercontent.com/dirwin517/bot-farm/main/imgs/StartWorkStream.png" alt="Start a workstream dialog: pipeline, story, branch, repos and limits" width="100%">
+<img src="imgs/StartWorkStream.png" alt="Start a workstream dialog: pipeline, story, branch, repos and limits" width="100%">
 
 ### 3. Watch the board
 
 The team runs down the left with live status and spend. The board shows every card moving through
 **To do → Doing → Needs you → Done**, with the team's group chat underneath. Flip to **Farm** for the fun version.
 
-<img src="https://raw.githubusercontent.com/dirwin517/bot-farm/main/imgs/KanBan.png" alt="Kanban board with the team list, cards per stage and the group chat" width="100%">
+<img src="imgs/KanBan.png" alt="Kanban board with the team list, cards per stage and the group chat" width="100%">
 
 ### 4. Look over a bot's shoulder
 
 Click any bot to see its live transcript, tokens, cost, MCP servers and worktree. Talk to it directly,
 switch its model, stop it, or move its card.
 
-<img src="https://raw.githubusercontent.com/dirwin517/bot-farm/main/imgs/KanBanChat.png" alt="A bot's live transcript panel with model, tokens, tool calls and a direct-message box" width="100%">
+<img src="imgs/KanBanChat.png" alt="A bot's live transcript panel with model, tokens, tool calls and a direct-message box" width="100%">
 
 ### 5. Shape your pipelines and agents
 
@@ -84,8 +112,8 @@ YAML tab for anything the form doesn't cover.
 
 <table>
 <tr>
-<td width="50%"><img src="https://raw.githubusercontent.com/dirwin517/bot-farm/main/imgs/WorkStreams.png" alt="Pipeline editor with stages, owners, difficulty, limits and prompt"></td>
-<td width="50%"><img src="https://raw.githubusercontent.com/dirwin517/bot-farm/main/imgs/BotConfig.png" alt="Agent editor with name, role, model, reasoning, tools and instructions"></td>
+<td width="50%"><img src="imgs/WorkStreams.png" alt="Pipeline editor with stages, owners, difficulty, limits and prompt"></td>
+<td width="50%"><img src="imgs/BotConfig.png" alt="Agent editor with name, role, model, reasoning, tools and instructions"></td>
 </tr>
 <tr>
 <td align="center"><sub><b>Pipeline editor</b> — stages, who does them, what they receive</sub></td>
@@ -100,8 +128,8 @@ on any workstream. When a limit is hit, the bots stop and wait for you.
 
 <table>
 <tr>
-<td width="60%"><img src="https://raw.githubusercontent.com/dirwin517/bot-farm/main/imgs/BotRouting.png" alt="Model routing: easy, normal and hard tiers with model, reasoning and quota"></td>
-<td width="40%"><img src="https://raw.githubusercontent.com/dirwin517/bot-farm/main/imgs/SetLimits.png" alt="Workstream limits dialog: dollars, tokens and minutes"></td>
+<td width="60%"><img src="imgs/BotRouting.png" alt="Model routing: easy, normal and hard tiers with model, reasoning and quota"></td>
+<td width="40%"><img src="imgs/SetLimits.png" alt="Workstream limits dialog: dollars, tokens and minutes"></td>
 </tr>
 <tr>
 <td align="center"><sub><b>Model routing</b> by difficulty</sub></td>
@@ -115,7 +143,7 @@ When a workstream finishes you get a PR packet, a small celebration 🎉, and XP
 **Apply to my repos** turns each worktree into a patch and lands it in your real checkout as
 unstaged changes — ready to review in your IDE. Nothing is committed for you.
 
-<img src="https://raw.githubusercontent.com/dirwin517/bot-farm/main/imgs/ApplyChanges.png" alt="Apply the work to your repos dialog showing each repo, target branch and patch status" width="100%">
+<img src="imgs/ApplyChanges.png" alt="Apply the work to your repos dialog showing each repo, target branch and patch status" width="100%">
 
 ---
 
@@ -760,6 +788,6 @@ botfarm up                    # a populated board to play with
 
 Made with 🌱 for people who'd rather watch the crops grow than babysit a terminal.
 
-**[MIT License](LICENSE)**
+**[MIT License](LICENSE)** · Provided as is. Supervise your bots. Not responsible for goats. 🐐
 
 </div>
