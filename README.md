@@ -642,19 +642,19 @@ worktree's `.opencode/opencode.json` and take effect when the session restarts.
 ## ⌨️ CLI
 
 ```
-botfarm up [--port 4777] [--server URL] [--repo PATH]...   dashboard (default)
-botfarm ls                                                 list sessions
-botfarm new <repo> [task] --branch NAME [--agent A]        new session in a worktree
-botfarm send <id> <text...>                                queue a prompt
-botfarm stop [id...]                                       interrupt (all busy if omitted)
-botfarm rm <id> [--worktree] [--force]                     delete session and its worktree
-botfarm attach <id>                                        open the session in the opencode TUI
+bot-farm up [--port 4777] [--server URL] [--repo PATH]...   dashboard (default)
+bot-farm ls                                                 list sessions
+bot-farm new <repo> [task] --branch NAME [--agent A]        new session in a worktree
+bot-farm send <id> <text...>                                queue a prompt
+bot-farm stop [id...]                                       interrupt (all busy if omitted)
+bot-farm rm <id> [--worktree] [--force]                     delete session and its worktree
+bot-farm attach <id>                                        open the session in the opencode TUI
 ```
 
 Example — spin up a single bot on a fresh branch:
 
 ```bash
-botfarm new ~/code/app --branch fix/auth-redirect --task "Fix the redirect loop after SSO login"
+bot-farm new ~/code/app --branch fix/auth-redirect --task "Fix the redirect loop after SSO login"
 ```
 
 That creates the worktree, opens a session there and sends the first instruction. The card shows the branch and
